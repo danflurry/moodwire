@@ -13,6 +13,14 @@ assert.match(await page.text(), /Moodwire live emotional news map/);
 
 const script = await worker.fetch(new Request("https://moodwire.test/app.js"), {}, context);
 assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
+const scriptText = await script.text();
+assert.match(scriptText, /class="back-headline"/);
+assert.match(scriptText, /class="flip-count"/);
+assert.doesNotMatch(scriptText, /label: "(?:hopeful|concerned|uplifted|heavy|balanced)"/);
+
+const stylesheet = await worker.fetch(new Request("https://moodwire.test/styles.css"), {}, context);
+const stylesheetText = await stylesheet.text();
+assert.doesNotMatch(stylesheetText, /-webkit-line-clamp/);
 
 const news = await worker.fetch(new Request("https://moodwire.test/api/news"), {}, context);
 const payload = await news.json();

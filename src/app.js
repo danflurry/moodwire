@@ -183,11 +183,9 @@
     const count = totals(story);
     const total = Math.max(1, count.happy + count.neutral + count.sad);
     const score = (count.happy - count.sad) / total;
-    if (score > .38) return { tone: "happy", label: "uplifted", score };
-    if (score > .11) return { tone: "happy", label: "hopeful", score };
-    if (score < -.38) return { tone: "sad", label: "heavy", score };
-    if (score < -.11) return { tone: "sad", label: "concerned", score };
-    return { tone: "neutral", label: "balanced", score };
+    if (score > .11) return { tone: "happy", label: "Happy", score };
+    if (score < -.11) return { tone: "sad", label: "Sad", score };
+    return { tone: "neutral", label: "Neutral", score };
   }
 
   function escapeHtml(value) {
@@ -218,7 +216,7 @@
     article.innerHTML = `
       <div class="card-rotator">
         <section class="card-face card-front">
-          <div class="card-top"><span class="card-index"></span><span class="source-pill"></span></div>
+          <div class="card-top"><span class="card-index"></span></div>
           <div class="card-body">
             <p class="consensus"></p>
             <h2></h2>
@@ -230,11 +228,11 @@
             <button class="reaction-button" type="button" data-action="rate" data-value="neutral">${ICONS.neutral}<span>Neutral</span></button>
             <button class="reaction-button" type="button" data-action="rate" data-value="sad">${ICONS.sad}<span>Sad</span></button>
           </div>
-          <button class="flip-button" type="button" data-action="flip" aria-label="Turn card over to view sources">${ICONS.flip}</button>
+          <button class="flip-button" type="button" data-action="flip" aria-label="Turn card over to view sources"><span class="flip-count"></span>${ICONS.flip}</button>
         </section>
         <section class="card-face card-back" aria-hidden="true">
           <p class="back-kicker">THE REPORTING BEHIND THIS CARD</p>
-          <h3>Open a source</h3>
+          <h3 class="back-headline"></h3>
           <div class="source-grid"></div>
           <button class="back-button" type="button" data-action="back" aria-label="Turn card back to the headline">${ICONS.back}</button>
         </section>
@@ -264,9 +262,11 @@
     card.style.setProperty("--neutral-pct", `${(count.neutral / total) * 100}%`);
     card.style.setProperty("--sad-pct", `${(count.sad / total) * 100}%`);
     card.querySelector(".card-index").textContent = String(visualIndex + 1).padStart(2, "0");
-    card.querySelector(".source-pill").textContent = `${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`;
+    card.querySelector(".flip-count").textContent = String(sourceCount);
+    card.querySelector(".flip-button").setAttribute("aria-label", `Turn card over to view ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`);
     card.querySelector(".consensus").textContent = sourceCount > 1 ? "Consensus headline" : "Latest headline";
     card.querySelector("h2").textContent = story.headline;
+    card.querySelector(".back-headline").textContent = story.headline;
     card.querySelector(".reaction-count").textContent = `${total} reactions`;
     card.querySelector(".mood-word").textContent = mood.label;
     card.querySelectorAll(".reaction-button").forEach((button) => {
@@ -278,6 +278,34 @@
     if (sourceGrid.dataset.signature !== signature) {
       sourceGrid.dataset.signature = signature;
       sourceGrid.innerHTML = story.sources.length ? story.sources.map(sourceMarkup).join("") : '<p class="source-empty">Source links are still arriving.</p>';
+    }
+  }
+
+  function fitHeadline(card, story, cardWidth, cardHeight) {
+    const heading = card.querySelector("h2");
+    const body = card.querySelector(".card-body");
+    if (!heading || !body) return;
+    const lengthPenalty = Math.max(0, story.headline.length - 52) * .095;
+    const areaBonus = clamp((cardWidth * cardHeight - 42_000) / 18_000, 0, 4);
+    let low = 10;
+    let high = clamp(27 - lengthPenalty + areaBonus, 14, 30);
+    let best = low;
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      const size = (low + high) / 2;
+      heading.style.fontSize = `${size}px`;
+      if (body.scrollHeight <= body.clientHeight + 1) {
+        best = size;
+        low = size;
+      } else {
+        high = size;
+      }
+    }
+    heading.style.fontSize = `${best.toFixed(1)}px`;
+    const backHeading = card.querySelector(".back-headline");
+    if (backHeading) {
+      const backPenalty = Math.max(0, story.headline.length - 48) * .065;
+      const backAreaBonus = clamp((cardWidth * cardHeight - 42_000) / 24_000, 0, 3);
+      backHeading.style.fontSize = `${clamp(19 - backPenalty + backAreaBonus, 10.5, 22).toFixed(1)}px`;
     }
   }
 
@@ -374,6 +402,7 @@
       card.style.setProperty("--x", `${best.col * (cellW + gap)}px`);
       card.style.setProperty("--y", `${best.row * (rowH + gap)}px`);
       card.classList.toggle("size-small", cardWidth < 245 || cardHeight < 205);
+      fitHeadline(card, story, cardWidth, cardHeight);
     });
     const contentHeight = maxRow * rowH + Math.max(0, maxRow - 1) * gap + 18;
     const stageTop = stage.getBoundingClientRect().top + window.scrollY;
@@ -416,6 +445,8 @@
     story.interactions += 1;
     const card = state.elements.get(storyId);
     card?.classList.remove("rating-open");
+    card?.classList.add("rating-dismissed");
+    if (card?.contains(document.activeElement)) document.activeElement.blur();
     updateCard(story, [...state.stories].sort((a, b) => b.interactions - a.interactions).indexOf(story));
     layoutCards();
     if (!fromTool) showToast("The map is adjusting while your reaction saves…");
@@ -567,6 +598,10 @@
     if (card?.querySelector(".card-back")) card.querySelector(".card-back").inert = true;
     if (card?.querySelector(".card-front")) card.querySelector(".card-front").inert = false;
   });
+
+  stage.addEventListener("pointerleave", (event) => {
+    if (event.target.classList?.contains("story-card")) event.target.classList.remove("rating-dismissed");
+  }, true);
 
   stage.addEventListener("load", (event) => {
     if (event.target.classList?.contains("source-favicon")) event.target.classList.add("is-loaded");
