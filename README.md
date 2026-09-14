@@ -18,3 +18,7 @@ Moodwire is a live emotional map of the news. It clusters related headlines from
 The production artifact is a dependency-free Cloudflare Worker. `src/` contains the browser experience, `server/worker-runtime.js` contains the feed/API runtime, and `scripts/build-standalone.mjs` creates `dist/server/index.js`. D1 migrations live in `drizzle/`.
 
 The Worker exposes a scheduled handler and also refreshes opportunistically when the active site requests news after the one-minute cache expires. This keeps the visible site current even on hosting surfaces where a cron trigger is not attached.
+
+## GitHub Pages preview
+
+The repository includes a GitHub Actions workflow that publishes `src/` as an interactive static preview. On GitHub Pages, Moodwire clearly identifies itself as a preview and keeps reactions in the browser because Pages cannot execute the Worker API or D1 database. Deploy the Worker artifact separately to enable live RSS aggregation and shared voting.

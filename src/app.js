@@ -6,7 +6,9 @@
   const feedState = document.querySelector("#feed-state");
   const refreshTime = document.querySelector("#refresh-time");
   const sourceTotal = document.querySelector("#source-total");
+  const feedNote = document.querySelector("#feed-note");
   const toast = document.querySelector("#toast");
+  const STATIC_PREVIEW = location.hostname.endsWith(".github.io");
 
   const ICONS = {
     happy: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 10h.01M16 10h.01M8 15c1.2 1.1 2.5 1.6 4 1.6s2.8-.5 4-1.6"/></svg>',
@@ -370,8 +372,12 @@
     updateCard(story, [...state.stories].sort((a, b) => b.interactions - a.interactions).indexOf(story));
     layoutCards();
     if (!fromTool) showToast("The map is adjusting while your reaction saves…");
+    if (STATIC_PREVIEW) {
+      if (!fromTool) showToast(`You marked this story ${value}. Saved on this device.`);
+      return { storyId, emotion: value, mood: moodFor(story).label, persisted: false };
+    }
     const saveReaction = async () => {
-      const response = await fetch("/api/vote", {
+      const response = await fetch("./api/vote", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ storyId, emotion: value }),
@@ -418,7 +424,8 @@
       updateCard(story, ranked.indexOf(story));
       setTimeout(layoutCards, 80);
     }
-    fetch("/api/interaction", {
+    if (STATIC_PREVIEW) return;
+    fetch("./api/interaction", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ storyId, kind }),
@@ -453,14 +460,23 @@
   }
 
   async function fetchNews(initial = false) {
+    if (STATIC_PREVIEW) {
+      if (initial || !state.stories.length) mergeStories(SEED_STORIES, false);
+      feedState.textContent = "INTERACTIVE PREVIEW";
+      sourceTotal.textContent = "20";
+      feedNote.textContent = "preview data; live backend not connected";
+      refreshTime.textContent = "Reactions are saved on this device";
+      return;
+    }
     try {
-      const response = await fetch("/api/news", { cache: "no-store" });
+      const response = await fetch("./api/news", { cache: "no-store" });
       if (!response.ok) throw new Error("Feed unavailable");
       const data = await response.json();
       if (!Array.isArray(data.stories) || !data.stories.length) throw new Error("No stories");
       mergeStories(data.stories, data.mode === "live" || data.mode === "cached");
       feedState.textContent = data.mode === "live" || data.mode === "cached" ? "LIVE FEEDS" : "PREVIEW SIGNAL";
       sourceTotal.textContent = String(data.activeSources || data.totalSources || 20);
+      feedNote.textContent = data.mode === "live" || data.mode === "cached" ? "checked every minute" : "preview data; reconnecting automatically";
       const refreshed = Number(data.refreshedAt || Date.now());
       refreshTime.dataset.timestamp = String(refreshed);
       refreshTime.textContent = relativeTime(refreshed);
@@ -469,6 +485,7 @@
         mergeStories(SEED_STORIES, false);
         feedState.textContent = "PREVIEW SIGNAL";
         sourceTotal.textContent = "20";
+        feedNote.textContent = "preview data; backend not connected";
         refreshTime.textContent = "Live feeds reconnect automatically";
       }
     }
