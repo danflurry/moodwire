@@ -21,17 +21,86 @@ assert.ok(payload.stories.length >= 4);
 
 const sampleFeed = `<?xml version="1.0"?><rss><channel><item><title>Coastal cities prepare as powerful storm changes course</title><link>https://example.com/storm</link><pubDate>${new Date().toUTCString()}</pubDate></item><item><title>Researchers announce promising battery material breakthrough</title><link>https://example.com/battery</link><pubDate>${new Date().toUTCString()}</pubDate></item></channel></rss>`;
 globalThis.fetch = async () => new Response(sampleFeed, { status: 200, headers: { "content-type": "application/rss+xml" } });
-const liveNews = await worker.fetch(new Request("https://moodwire.test/api/news"), {}, context);
+const { default: liveWorker } = await import(`${moduleUrl.href}?smoke-live=${Date.now()}`);
+const liveNews = await liveWorker.fetch(new Request("https://moodwire.test/api/news"), {}, context);
 const livePayload = await liveNews.json();
 assert.equal(livePayload.mode, "live");
 assert.equal(livePayload.activeSources, 20);
 assert.ok(livePayload.stories.some((story) => story.sources.length === 16));
 
-const vote = await worker.fetch(new Request("https://moodwire.test/api/vote", {
+const localVote = await liveWorker.fetch(new Request("https://moodwire.test/api/vote", {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ storyId: payload.stories[0].id, emotion: "happy" }),
+  body: JSON.stringify({ storyId: livePayload.stories[0].id, emotion: "happy" }),
 }), {}, context);
-assert.equal(vote.status, 200);
+assert.equal(localVote.status, 200);
+assert.equal((await localVote.json()).persisted, false);
 
-console.log(`Smoke test passed: fallback, 20-feed aggregation, assets, and voting routes.`);
+const storedVotes = new Map();
+const globalRateCounts = new Map();
+const fakeDb = {
+  prepare(sql) {
+    return {
+      bind(...args) {
+        return {
+          async first() {
+            if (sql.includes("INSERT INTO mutation_limits")) {
+              const actor = args[0];
+              const count = (globalRateCounts.get(actor) || 0) + 1;
+              globalRateCounts.set(actor, count);
+              return { requestCount: count };
+            }
+            if (sql.includes("SELECT payload")) return { payload: JSON.stringify(livePayload), refreshedAt: livePayload.refreshedAt };
+            return null;
+          },
+          async run() {
+            if (sql.includes("INSERT INTO votes")) storedVotes.set(`${args[0]}:${args[1]}`, args[2]);
+            return { success: true };
+          },
+          async all() {
+            if (sql.includes("SELECT emotion, COUNT(*)")) {
+              const counts = new Map();
+              for (const [key, emotion] of storedVotes) if (key.startsWith(`${args[0]}:`)) counts.set(emotion, (counts.get(emotion) || 0) + 1);
+              return { results: [...counts].map(([emotion, count]) => ({ emotion, count })) };
+            }
+            return { results: [] };
+          },
+        };
+      },
+    };
+  },
+};
+const dbEnv = { DB: fakeDb };
+const knownStoryId = livePayload.stories[0].id;
+const voteRequest = (storyId, extraHeaders = {}, body = { storyId, emotion: "happy" }) => new Request("https://moodwire.test/api/vote", {
+  method: "POST",
+  headers: { "content-type": "application/json", ...extraHeaders },
+  body: JSON.stringify(body),
+});
+
+const unauthenticated = await liveWorker.fetch(voteRequest(knownStoryId), dbEnv, context);
+assert.equal(unauthenticated.status, 401);
+const nullBody = await liveWorker.fetch(voteRequest(knownStoryId, { "oai-authenticated-user-id": "reviewer-null" }, null), dbEnv, context);
+assert.equal(nullBody.status, 400);
+const unknownStory = await liveWorker.fetch(voteRequest("story-does-not-exist", { "oai-authenticated-user-id": "reviewer-unknown" }), dbEnv, context);
+assert.equal(unknownStory.status, 404);
+const savedVote = await liveWorker.fetch(voteRequest(knownStoryId, { "oai-authenticated-user-id": "reviewer-rate" }), dbEnv, context);
+assert.equal(savedVote.status, 200);
+assert.equal((await savedVote.json()).persisted, true);
+
+let throttled = false;
+for (let index = 0; index < 20; index += 1) {
+  const response = await liveWorker.fetch(voteRequest(knownStoryId, { "oai-authenticated-user-id": "reviewer-rate" }, { storyId: knownStoryId, emotion: index % 2 ? "neutral" : "happy" }), dbEnv, context);
+  if (response.status === 429) { throttled = true; break; }
+}
+assert.equal(throttled, true);
+
+let globalThrottleStatus = 0;
+for (let index = 0; index < 61; index += 1) {
+  const { default: isolatedWorker } = await import(`${moduleUrl.href}?smoke-global=${index}-${Date.now()}`);
+  const response = await isolatedWorker.fetch(voteRequest(knownStoryId, { "oai-authenticated-user-id": "reviewer-global" }), dbEnv, context);
+  globalThrottleStatus = response.status;
+}
+assert.equal(globalThrottleStatus, 429);
+
+console.log(`Smoke test passed: fallback, 20-feed aggregation, assets, authenticated voting, validation, and throttling.`);

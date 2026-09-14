@@ -58,7 +58,8 @@
     toastTimer: 0,
     resizeTimer: 0,
     live: false,
-    sessionId: getSessionId(),
+    voteQueues: new Map(),
+    voteVersions: new Map(),
   };
 
   function hash(value) {
@@ -75,17 +76,6 @@
   function readStoredVotes() {
     try { return JSON.parse(localStorage.getItem("moodwire-votes") || "{}"); }
     catch { return {}; }
-  }
-
-  function getSessionId() {
-    try {
-      let id = localStorage.getItem("moodwire-session");
-      if (!id) {
-        id = globalThis.crypto?.randomUUID?.() || `reader-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        localStorage.setItem("moodwire-session", id);
-      }
-      return id;
-    } catch { return "local-reader"; }
   }
 
   function sentimentCue(headline) {
@@ -296,6 +286,10 @@
     const cellW = (width - gap * (cols - 1)) / cols;
     const rowH = clamp(cellW * .84, 72, 108);
     const ranked = [...state.stories].sort((a, b) => b.interactions - a.interactions || a.id.localeCompare(b.id));
+    ranked.forEach((story, index) => {
+      const label = state.elements.get(story.id)?.querySelector(".card-index");
+      if (label) label.textContent = String(index + 1).padStart(2, "0");
+    });
     const rows = [];
     let prefixArea = 0;
     let maxRow = 0;
@@ -364,6 +358,10 @@
   async function rateStory(storyId, value, fromTool = false) {
     const story = state.stories.find((item) => item.id === storyId);
     if (!story || !["happy", "neutral", "sad"].includes(value)) throw new Error("Unknown story or reaction");
+    const previousVote = state.humanVotes[storyId] || null;
+    const previousInteractions = story.interactions;
+    const version = (state.voteVersions.get(storyId) || 0) + 1;
+    state.voteVersions.set(storyId, version);
     state.humanVotes[storyId] = value;
     try { localStorage.setItem("moodwire-votes", JSON.stringify(state.humanVotes)); } catch {}
     story.interactions += 1;
@@ -371,23 +369,45 @@
     card?.classList.remove("rating-open");
     updateCard(story, [...state.stories].sort((a, b) => b.interactions - a.interactions).indexOf(story));
     layoutCards();
-    if (!fromTool) showToast(`You marked this story ${value}. The map is adjusting.`);
-    try {
+    if (!fromTool) showToast("The map is adjusting while your reaction saves…");
+    const saveReaction = async () => {
       const response = await fetch("/api/vote", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-moodwire-session": state.sessionId },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ storyId, emotion: value }),
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.ratings) {
-          story.community = data.ratings;
-          story.humanApplied = true;
-        }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.persisted !== true) throw new Error(data.error || "Reaction could not be saved");
+      return data;
+    };
+    const previousRequest = state.voteQueues.get(storyId) || Promise.resolve();
+    const queuedRequest = previousRequest.catch(() => {}).then(saveReaction);
+    state.voteQueues.set(storyId, queuedRequest);
+    try {
+      const data = await queuedRequest;
+      if (state.voteVersions.get(storyId) === version && data.ratings) {
+        story.community = data.ratings;
+        story.humanApplied = true;
         updateCard(story, [...state.stories].sort((a, b) => b.interactions - a.interactions).indexOf(story));
       }
-    } catch {}
-    return { storyId, emotion: value, mood: moodFor(story).label };
+      if (!fromTool && state.voteVersions.get(storyId) === version) showToast(`You marked this story ${value}. Reaction synced.`);
+      return { storyId, emotion: value, mood: moodFor(story).label, persisted: true };
+    } catch (error) {
+      const isLatest = state.voteVersions.get(storyId) === version;
+      if (fromTool && isLatest) {
+        if (previousVote) state.humanVotes[storyId] = previousVote;
+        else delete state.humanVotes[storyId];
+        story.interactions = previousInteractions;
+        try { localStorage.setItem("moodwire-votes", JSON.stringify(state.humanVotes)); } catch {}
+        updateCard(story, [...state.stories].sort((a, b) => b.interactions - a.interactions).indexOf(story));
+        layoutCards();
+        throw new Error(error instanceof Error ? error.message : "Reaction could not be saved");
+      }
+      if (!fromTool && isLatest) showToast("The map changed locally; this reaction could not sync yet.");
+      return { storyId, emotion: value, mood: moodFor(story).label, persisted: false };
+    } finally {
+      if (state.voteQueues.get(storyId) === queuedRequest) state.voteQueues.delete(storyId);
+    }
   }
 
   function postInteraction(storyId, kind) {
@@ -400,7 +420,7 @@
     }
     fetch("/api/interaction", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-moodwire-session": state.sessionId },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ storyId, kind }),
       keepalive: true,
     }).catch(() => {});
@@ -434,7 +454,7 @@
 
   async function fetchNews(initial = false) {
     try {
-      const response = await fetch("/api/news", { cache: "no-store", headers: { "x-moodwire-session": state.sessionId } });
+      const response = await fetch("/api/news", { cache: "no-store" });
       if (!response.ok) throw new Error("Feed unavailable");
       const data = await response.json();
       if (!Array.isArray(data.stories) || !data.stories.length) throw new Error("No stories");

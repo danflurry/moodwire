@@ -25,6 +25,12 @@ CREATE TABLE `interactions` (
 --> statement-breakpoint
 CREATE INDEX `idx_interactions_story_id` ON `interactions` (`story_id`);
 --> statement-breakpoint
+CREATE TABLE `mutation_limits` (
+	`actor_id` text PRIMARY KEY NOT NULL,
+	`window_started_at` integer NOT NULL,
+	`request_count` integer DEFAULT 1 NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `jobs` (
 	`name` text PRIMARY KEY NOT NULL,
 	`locked_until` integer DEFAULT 0 NOT NULL,

@@ -24,6 +24,7 @@ await writeFile(resolve(root, "dist/server/wrangler.json"), JSON.stringify({
   main: "index.js",
   compatibility_date: "2026-09-01",
   compatibility_flags: ["nodejs_compat"],
+  triggers: { crons: ["* * * * *"] },
 }, null, 2));
 await writeFile(resolve(root, "dist/.openai/hosting.json"), JSON.stringify(hosting, null, 2) + "\n");
 await cp(resolve(root, "drizzle"), resolve(root, "dist/.openai/drizzle"), { recursive: true });

@@ -26,6 +26,11 @@ const MAX_CACHE_AGE = 60_000;
 const MAX_FEED_BYTES = 1_100_000;
 let memorySnapshot = null;
 let refreshPromise = null;
+const mutationWindows = new Map();
+const LOCAL_MUTATION_LIMIT = 12;
+const LOCAL_MUTATION_WINDOW = 10_000;
+const GLOBAL_MUTATION_LIMIT = 60;
+const GLOBAL_MUTATION_WINDOW = 60_000;
 
 const demoSource = (name, url) => ({ name, url, domain: new URL(url).hostname });
 const DEMO_STORIES = [
@@ -166,6 +171,52 @@ function clusterEntries(entries) {
   }).slice(0, 18);
 }
 
+function reconcileStoryIds(stories, previousStories = []) {
+  const available = new Map(previousStories.map((story) => [story.id, story]));
+  return stories.map((story) => {
+    const currentTokens = titleTokens(story.headline);
+    const currentUrls = new Set(story.sources.map((source) => canonicalUrl(source.url) || source.url));
+    let best = null;
+    for (const previous of available.values()) {
+      const urlOverlap = previous.sources?.some((source) => currentUrls.has(canonicalUrl(source.url) || source.url));
+      const match = similarity(currentTokens, titleTokens(previous.headline || ""));
+      if (!urlOverlap && (match.shared < 3 || match.score < .55)) continue;
+      const score = match.score + (urlOverlap ? 2 : 0);
+      if (!best || score > best.score) best = { previous, score };
+    }
+    if (!best) return story;
+    available.delete(best.previous.id);
+    return { ...story, id: best.previous.id };
+  });
+}
+
+async function readLimitedText(response, limit) {
+  if (!response.body?.getReader) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > limit) throw new Error("feed too large");
+    return text;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel();
+        throw new Error("feed too large");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 async function fetchOneFeed(feed) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8_000);
@@ -174,7 +225,7 @@ async function fetchOneFeed(feed) {
     if (!response.ok) throw new Error(`${response.status}`);
     const declared = Number(response.headers.get("content-length") || 0);
     if (declared > MAX_FEED_BYTES) throw new Error("feed too large");
-    const xml = (await response.text()).slice(0, MAX_FEED_BYTES);
+    const xml = await readLimitedText(response, MAX_FEED_BYTES);
     return { ok: true, items: parseFeed(xml, feed) };
   } catch (error) {
     return { ok: false, items: [], error: error instanceof Error ? error.message : "fetch failed" };
@@ -227,17 +278,22 @@ async function releasePollLease(env, error = null) {
   catch {}
 }
 
+function demoSnapshot() {
+  return { mode: "demo", stories: DEMO_STORIES, refreshedAt: Date.now(), activeSources: 0, totalSources: FEEDS.length };
+}
+
 async function refreshFeeds(env) {
   if (refreshPromise) return refreshPromise;
   refreshPromise = (async () => {
     const acquired = await acquirePollLease(env);
-    if (!acquired) return memorySnapshot || await readStoredSnapshot(env);
+    if (!acquired) return memorySnapshot || await readStoredSnapshot(env) || demoSnapshot();
     let failure = null;
     try {
+      const previous = memorySnapshot || await readStoredSnapshot(env);
       const results = await mapLimit(FEEDS, 5, fetchOneFeed);
       const entries = results.flatMap((result) => result.items);
       const activeSources = results.filter((result) => result.ok && result.items.length).length;
-      const stories = clusterEntries(entries);
+      const stories = reconcileStoryIds(clusterEntries(entries), previous?.stories || []);
       if (!stories.length) throw new Error("No current feed items could be parsed");
       const snapshot = { mode: "live", stories, refreshedAt: Date.now(), activeSources, totalSources: FEEDS.length };
       memorySnapshot = snapshot;
@@ -245,7 +301,9 @@ async function refreshFeeds(env) {
       return snapshot;
     } catch (error) {
       failure = error instanceof Error ? error.message : "Feed refresh failed";
-      return memorySnapshot || await readStoredSnapshot(env) || { mode: "demo", stories: DEMO_STORIES, refreshedAt: Date.now(), activeSources: 0, totalSources: FEEDS.length };
+      const fallback = memorySnapshot || await readStoredSnapshot(env) || demoSnapshot();
+      memorySnapshot = fallback;
+      return fallback;
     } finally {
       await releasePollLease(env, failure);
     }
@@ -265,8 +323,37 @@ async function snapshotForRequest(env, ctx) {
   return await refreshFeeds(env);
 }
 
-function visitorId(request) {
-  return (request.headers.get("oai-authenticated-user-id") || request.headers.get("x-moodwire-session") || "anonymous-reader").slice(0, 140);
+async function visitorId(request) {
+  const authenticatedId = request.headers.get("oai-authenticated-user-id");
+  if (!authenticatedId) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(authenticatedId));
+  return `member-${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+async function storyIsKnown(env, storyId) {
+  const snapshot = memorySnapshot || await readStoredSnapshot(env);
+  return Boolean(snapshot?.stories?.some((story) => story.id === storyId));
+}
+
+async function allowMutation(env, actor) {
+  const now = Date.now();
+  const current = mutationWindows.get(actor);
+  if (!current || now - current.startedAt >= LOCAL_MUTATION_WINDOW) {
+    mutationWindows.set(actor, { startedAt: now, count: 1 });
+  } else {
+    if (current.count >= LOCAL_MUTATION_LIMIT) return false;
+    current.count += 1;
+  }
+  if (mutationWindows.size > 1_000) {
+    for (const [key, value] of mutationWindows) if (now - value.startedAt >= LOCAL_MUTATION_WINDOW) mutationWindows.delete(key);
+  }
+  try {
+    const cutoff = now - GLOBAL_MUTATION_WINDOW;
+    const row = await env.DB.prepare("INSERT INTO mutation_limits (actor_id, window_started_at, request_count) VALUES (?, ?, 1) ON CONFLICT(actor_id) DO UPDATE SET window_started_at = CASE WHEN mutation_limits.window_started_at <= ? THEN excluded.window_started_at ELSE mutation_limits.window_started_at END, request_count = CASE WHEN mutation_limits.window_started_at <= ? THEN 1 ELSE mutation_limits.request_count + 1 END RETURNING request_count AS requestCount").bind(actor, now, cutoff, cutoff).first();
+    return Number(row?.requestCount || 0) <= GLOBAL_MUTATION_LIMIT;
+  } catch {
+    return false;
+  }
 }
 
 async function attachCommunityStats(env, request, stories) {
@@ -285,15 +372,17 @@ async function attachCommunityStats(env, request, stories) {
     }
     const interactionRows = await env.DB.prepare(`SELECT story_id AS storyId, SUM(count) AS count FROM interactions WHERE story_id IN (${placeholders}) GROUP BY story_id`).bind(...ids).all();
     for (const row of interactionRows.results || []) interactionCounts.set(row.storyId, Number(row.count || 0));
-    const actor = visitorId(request);
-    const voteRows = await env.DB.prepare(`SELECT story_id AS storyId, emotion FROM votes WHERE actor_id = ? AND story_id IN (${placeholders})`).bind(actor, ...ids).all();
-    userVotes = new Map((voteRows.results || []).map((row) => [row.storyId, row.emotion]));
+    const actor = await visitorId(request);
+    if (actor) {
+      const voteRows = await env.DB.prepare(`SELECT story_id AS storyId, emotion FROM votes WHERE actor_id = ? AND story_id IN (${placeholders})`).bind(actor, ...ids).all();
+      userVotes = new Map((voteRows.results || []).map((row) => [row.storyId, row.emotion]));
+    }
   } catch { return stories; }
   return stories.map((story) => ({ ...story, ratings: ratings.get(story.id) || { happy: 0, neutral: 0, sad: 0 }, userVote: userVotes.get(story.id) || null, interactions: Number(story.interactions || 0) + (interactionCounts.get(story.id) || 0) }));
 }
 
 async function handleNews(request, env, ctx) {
-  const snapshot = await snapshotForRequest(env, ctx);
+  const snapshot = await snapshotForRequest(env, ctx) || demoSnapshot();
   const stories = await attachCommunityStats(env, request, snapshot.stories || DEMO_STORIES);
   return json({ ...snapshot, stories });
 }
@@ -301,10 +390,15 @@ async function handleNews(request, env, ctx) {
 async function parseBody(request) {
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 4_096) throw new Error("Request too large");
-  return await request.json();
+  const text = await readLimitedText(request, 4_096);
+  const body = JSON.parse(text);
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid JSON object");
+  return body;
 }
 
 async function handleVote(request, env) {
+  const actor = env?.DB ? await visitorId(request) : null;
+  if (env?.DB && !actor) return json({ error: "Authentication required" }, 401);
   let body;
   try { body = await parseBody(request); }
   catch { return json({ error: "Invalid request" }, 400); }
@@ -312,7 +406,8 @@ async function handleVote(request, env) {
   const emotion = typeof body.emotion === "string" ? body.emotion : "";
   if (!/^[a-z0-9_-]{3,100}$/i.test(storyId) || !["happy", "neutral", "sad"].includes(emotion)) return json({ error: "A valid story and emotion are required" }, 400);
   if (!env?.DB) return json({ persisted: false, ratings: null });
-  const actor = visitorId(request);
+  if (!await allowMutation(env, actor)) return json({ error: "Too many updates; please wait a moment" }, 429);
+  if (!await storyIsKnown(env, storyId)) return json({ error: "Story not found" }, 404);
   try {
     await env.DB.prepare("INSERT INTO votes (story_id, actor_id, emotion, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(story_id, actor_id) DO UPDATE SET emotion = excluded.emotion, updated_at = excluded.updated_at").bind(storyId, actor, emotion, Date.now()).run();
     const rows = await env.DB.prepare("SELECT emotion, COUNT(*) AS count FROM votes WHERE story_id = ? GROUP BY emotion").bind(storyId).all();
@@ -323,6 +418,8 @@ async function handleVote(request, env) {
 }
 
 async function handleInteraction(request, env) {
+  const actor = env?.DB ? await visitorId(request) : null;
+  if (env?.DB && !actor) return json({ error: "Authentication required" }, 401);
   let body;
   try { body = await parseBody(request); }
   catch { return json({ error: "Invalid request" }, 400); }
@@ -330,8 +427,10 @@ async function handleInteraction(request, env) {
   const kind = typeof body.kind === "string" ? body.kind : "";
   if (!/^[a-z0-9_-]{3,100}$/i.test(storyId) || !["flip", "source_open"].includes(kind)) return json({ error: "Invalid interaction" }, 400);
   if (!env?.DB) return json({ persisted: false });
+  if (!await allowMutation(env, actor)) return json({ error: "Too many updates; please wait a moment" }, 429);
+  if (!await storyIsKnown(env, storyId)) return json({ error: "Story not found" }, 404);
   try {
-    await env.DB.prepare("INSERT INTO interactions (story_id, actor_id, kind, count, last_at) VALUES (?, ?, ?, 1, ?) ON CONFLICT(story_id, actor_id, kind) DO UPDATE SET count = count + 1, last_at = excluded.last_at").bind(storyId, visitorId(request), kind, Date.now()).run();
+    await env.DB.prepare("INSERT INTO interactions (story_id, actor_id, kind, count, last_at) VALUES (?, ?, ?, 1, ?) ON CONFLICT(story_id, actor_id, kind) DO UPDATE SET count = CASE WHEN interactions.last_at <= excluded.last_at - 750 THEN interactions.count + 1 ELSE interactions.count END, last_at = CASE WHEN interactions.last_at <= excluded.last_at - 750 THEN excluded.last_at ELSE interactions.last_at END").bind(storyId, actor, kind, Date.now()).run();
     return json({ persisted: true });
   } catch { return json({ persisted: false }); }
 }

@@ -27,6 +27,12 @@ export const interactions = sqliteTable("interactions", {
   index("idx_interactions_story_id").on(table.storyId),
 ]);
 
+export const mutationLimits = sqliteTable("mutation_limits", {
+  actorId: text("actor_id").primaryKey(),
+  windowStartedAt: integer("window_started_at").notNull(),
+  requestCount: integer("request_count").notNull().default(1),
+});
+
 export const jobs = sqliteTable("jobs", {
   name: text("name").primaryKey(),
   lockedUntil: integer("locked_until").notNull().default(0),
