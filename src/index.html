@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#f4f1e8">
+  <meta name="theme-color" content="#070a0f">
   <meta name="description" content="A real-time map of the news, arranged by how readers feel and what they care about.">
+  <meta name="moodwire-api-base" content="">
   <title>Moodwire — The living news grid</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23101218'/%3E%3Cpath d='M14 42V30h9v12zm14 0V14h9v28zm14 0V23h9v19z' fill='%23d8ff3e'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./styles.css">
@@ -17,7 +18,7 @@
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
         <span>MOODWIRE</span>
       </a>
-      <p class="edition">THE LIVING NEWS GRID</p>
+      <p class="edition" id="date-stamp">LIVE EDITION</p>
       <div class="live-status" aria-live="polite">
         <span class="live-pulse" aria-hidden="true"></span>
         <strong id="feed-state">CONNECTING</strong>
@@ -25,18 +26,8 @@
       </div>
     </header>
 
-    <section class="signal-head" aria-labelledby="page-title">
-      <div>
-        <p class="eyebrow" id="date-stamp">LIVE EDITION</p>
-        <h1 id="page-title">How the news feels, right now.</h1>
-      </div>
-      <div class="signal-copy">
-        <p>Stories move left or right with readers’ mood. The stories getting the most attention rise to the top.</p>
-        <p class="microcopy"><span class="pointer-glyph" aria-hidden="true">↗</span> Hover a card to react. Turn it over for every source.</p>
-      </div>
-    </section>
-
-    <section class="map" aria-label="Live emotional news map">
+    <h1 class="sr-only" id="page-title">Moodwire live emotional news map</h1>
+    <section class="map" aria-labelledby="page-title">
       <div class="axis-row" aria-hidden="true">
         <span><i class="axis-swatch happy"></i>HAPPIER</span>
         <span><i class="axis-swatch neutral"></i>NEUTRAL</span>
@@ -44,7 +35,7 @@
       </div>
       <div class="map-body">
         <div class="vertical-axis" aria-hidden="true"><span>MOST FELT</span><i></i><span>EMERGING</span></div>
-        <div class="story-stage" id="story-grid" aria-live="polite" aria-busy="true">
+        <div class="story-stage" id="story-grid" aria-busy="true">
           <div class="grid-loading" id="grid-loading">
             <span class="loading-mark"><i></i><i></i><i></i></span>
             <p>Gathering the front pages…</p>

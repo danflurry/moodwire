@@ -8,7 +8,8 @@
   const sourceTotal = document.querySelector("#source-total");
   const feedNote = document.querySelector("#feed-note");
   const toast = document.querySelector("#toast");
-  const STATIC_PREVIEW = location.hostname.endsWith(".github.io");
+  const API_BASE = (document.querySelector('meta[name="moodwire-api-base"]')?.content || "").trim().replace(/\/+$/, "");
+  const VISITOR_ID = readVisitorId();
 
   const ICONS = {
     happy: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 10h.01M16 10h.01M8 15c1.2 1.1 2.5 1.6 4 1.6s2.8-.5 4-1.6"/></svg>',
@@ -74,6 +75,44 @@
   }
 
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+
+  function readVisitorId() {
+    const fallback = () => {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    };
+    try {
+      const stored = localStorage.getItem("moodwire-visitor");
+      if (stored && /^[a-z0-9_-]{16,128}$/i.test(stored)) return stored;
+      const created = crypto.randomUUID?.() || fallback();
+      localStorage.setItem("moodwire-visitor", created);
+      return created;
+    } catch { return fallback(); }
+  }
+
+  function apiUrl(path) { return API_BASE ? `${API_BASE}${path}` : `.${path}`; }
+
+  function apiFetch(path, options = {}) {
+    const headers = new Headers(options.headers || {});
+    headers.set("x-moodwire-visitor", VISITOR_ID);
+    return fetch(apiUrl(path), { ...options, headers });
+  }
+
+  function mixRgb(left, right, amount) {
+    return left.map((channel, index) => Math.round(channel + (right[index] - channel) * amount));
+  }
+
+  function moodPalette(score) {
+    const neutral = [67, 136, 245];
+    const endpoint = score >= 0 ? [53, 208, 127] : [240, 91, 102];
+    const accent = mixRgb(neutral, endpoint, Math.abs(clamp(score, -1, 1)));
+    return {
+      accent,
+      surface: mixRgb([18, 27, 39], accent, .28),
+      deep: mixRgb([9, 14, 21], accent, .12),
+      border: mixRgb([75, 88, 105], accent, .62),
+    };
+  }
 
   function readStoredVotes() {
     try { return JSON.parse(localStorage.getItem("moodwire-votes") || "{}"); }
@@ -212,9 +251,14 @@
     const count = totals(story);
     const total = Math.max(1, count.happy + count.neutral + count.sad);
     const mood = moodFor(story);
+    const palette = moodPalette(mood.score);
     const selected = state.humanVotes[story.id];
     const sourceCount = story.sources.length;
     card.dataset.mood = mood.tone;
+    card.style.setProperty("--mood-color", `rgb(${palette.accent.join(", ")})`);
+    card.style.setProperty("--mood-surface", `rgb(${palette.surface.join(", ")})`);
+    card.style.setProperty("--mood-deep", `rgb(${palette.deep.join(", ")})`);
+    card.style.setProperty("--mood-border", `rgb(${palette.border.join(", ")})`);
     card.setAttribute("aria-label", `${story.headline}. ${total} reactions. Mood: ${mood.label}.`);
     card.style.setProperty("--happy-pct", `${(count.happy / total) * 100}%`);
     card.style.setProperty("--neutral-pct", `${(count.neutral / total) * 100}%`);
@@ -331,7 +375,10 @@
       card.style.setProperty("--y", `${best.row * (rowH + gap)}px`);
       card.classList.toggle("size-small", cardWidth < 245 || cardHeight < 205);
     });
-    stage.style.height = `${Math.max(640, maxRow * rowH + Math.max(0, maxRow - 1) * gap + 18)}px`;
+    const contentHeight = maxRow * rowH + Math.max(0, maxRow - 1) * gap + 18;
+    const stageTop = stage.getBoundingClientRect().top + window.scrollY;
+    const viewportFloor = Math.max(360, document.documentElement.clientHeight - stageTop - 10);
+    stage.style.height = `${Math.max(viewportFloor, contentHeight)}px`;
   }
 
   function mergeStories(rawStories, isLive) {
@@ -372,12 +419,12 @@
     updateCard(story, [...state.stories].sort((a, b) => b.interactions - a.interactions).indexOf(story));
     layoutCards();
     if (!fromTool) showToast("The map is adjusting while your reaction saves…");
-    if (STATIC_PREVIEW) {
+    if (!story.isLive) {
       if (!fromTool) showToast(`You marked this story ${value}. Saved on this device.`);
       return { storyId, emotion: value, mood: moodFor(story).label, persisted: false };
     }
     const saveReaction = async () => {
-      const response = await fetch("./api/vote", {
+      const response = await apiFetch("/api/vote", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ storyId, emotion: value }),
@@ -424,8 +471,8 @@
       updateCard(story, ranked.indexOf(story));
       setTimeout(layoutCards, 80);
     }
-    if (STATIC_PREVIEW) return;
-    fetch("./api/interaction", {
+    if (!story?.isLive) return;
+    apiFetch("/api/interaction", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ storyId, kind }),
@@ -460,16 +507,8 @@
   }
 
   async function fetchNews(initial = false) {
-    if (STATIC_PREVIEW) {
-      if (initial || !state.stories.length) mergeStories(SEED_STORIES, false);
-      feedState.textContent = "INTERACTIVE PREVIEW";
-      sourceTotal.textContent = "20";
-      feedNote.textContent = "preview data; live backend not connected";
-      refreshTime.textContent = "Reactions are saved on this device";
-      return;
-    }
     try {
-      const response = await fetch("./api/news", { cache: "no-store" });
+      const response = await apiFetch("/api/news", { cache: "no-store" });
       if (!response.ok) throw new Error("Feed unavailable");
       const data = await response.json();
       if (!Array.isArray(data.stories) || !data.stories.length) throw new Error("No stories");
@@ -483,9 +522,9 @@
     } catch {
       if (initial || !state.stories.length) {
         mergeStories(SEED_STORIES, false);
-        feedState.textContent = "PREVIEW SIGNAL";
+        feedState.textContent = "OFFLINE SAMPLE";
         sourceTotal.textContent = "20";
-        feedNote.textContent = "preview data; backend not connected";
+        feedNote.textContent = "sample stories; reconnecting automatically";
         refreshTime.textContent = "Live feeds reconnect automatically";
       }
     }

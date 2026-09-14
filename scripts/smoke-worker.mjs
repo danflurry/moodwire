@@ -9,7 +9,7 @@ const context = { waitUntil() {} };
 
 const page = await worker.fetch(new Request("https://moodwire.test/"), {}, context);
 assert.equal(page.status, 200);
-assert.match(await page.text(), /How the news feels, right now\./);
+assert.match(await page.text(), /Moodwire live emotional news map/);
 
 const script = await worker.fetch(new Request("https://moodwire.test/app.js"), {}, context);
 assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
@@ -72,6 +72,7 @@ const fakeDb = {
 };
 const dbEnv = { DB: fakeDb };
 const knownStoryId = livePayload.stories[0].id;
+const pagesOrigin = "https://danflurry.github.io";
 const voteRequest = (storyId, extraHeaders = {}, body = { storyId, emotion: "happy" }) => new Request("https://moodwire.test/api/vote", {
   method: "POST",
   headers: { "content-type": "application/json", ...extraHeaders },
@@ -80,6 +81,18 @@ const voteRequest = (storyId, extraHeaders = {}, body = { storyId, emotion: "hap
 
 const unauthenticated = await liveWorker.fetch(voteRequest(knownStoryId), dbEnv, context);
 assert.equal(unauthenticated.status, 401);
+const preflight = await liveWorker.fetch(new Request("https://moodwire.test/api/vote", {
+  method: "OPTIONS",
+  headers: { origin: pagesOrigin, "access-control-request-method": "POST", "access-control-request-headers": "content-type,x-moodwire-visitor" },
+}), dbEnv, context);
+assert.equal(preflight.status, 204);
+assert.equal(preflight.headers.get("access-control-allow-origin"), pagesOrigin);
+const deniedPreflight = await liveWorker.fetch(new Request("https://moodwire.test/api/vote", {
+  method: "OPTIONS",
+  headers: { origin: "https://example.com" },
+}), dbEnv, context);
+assert.equal(deniedPreflight.status, 403);
+assert.equal(deniedPreflight.headers.get("access-control-allow-origin"), null);
 const nullBody = await liveWorker.fetch(voteRequest(knownStoryId, { "oai-authenticated-user-id": "reviewer-null" }, null), dbEnv, context);
 assert.equal(nullBody.status, 400);
 const unknownStory = await liveWorker.fetch(voteRequest("story-does-not-exist", { "oai-authenticated-user-id": "reviewer-unknown" }), dbEnv, context);
@@ -87,6 +100,10 @@ assert.equal(unknownStory.status, 404);
 const savedVote = await liveWorker.fetch(voteRequest(knownStoryId, { "oai-authenticated-user-id": "reviewer-rate" }), dbEnv, context);
 assert.equal(savedVote.status, 200);
 assert.equal((await savedVote.json()).persisted, true);
+const anonymousVote = await liveWorker.fetch(voteRequest(knownStoryId, { origin: pagesOrigin, "x-moodwire-visitor": "anonymous-smoke-reviewer" }, { storyId: knownStoryId, emotion: "neutral" }), dbEnv, context);
+assert.equal(anonymousVote.status, 200);
+assert.equal(anonymousVote.headers.get("access-control-allow-origin"), pagesOrigin);
+assert.equal((await anonymousVote.json()).persisted, true);
 
 let throttled = false;
 for (let index = 0; index < 20; index += 1) {
@@ -103,4 +120,4 @@ for (let index = 0; index < 61; index += 1) {
 }
 assert.equal(globalThrottleStatus, 429);
 
-console.log(`Smoke test passed: fallback, 20-feed aggregation, assets, authenticated voting, validation, and throttling.`);
+console.log(`Smoke test passed: fallback, 20-feed aggregation, assets, CORS, authenticated and anonymous voting, validation, and throttling.`);

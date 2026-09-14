@@ -31,6 +31,11 @@ const LOCAL_MUTATION_LIMIT = 12;
 const LOCAL_MUTATION_WINDOW = 10_000;
 const GLOBAL_MUTATION_LIMIT = 60;
 const GLOBAL_MUTATION_WINDOW = 60_000;
+const ALLOWED_ORIGINS = new Set([
+  "https://danflurry.github.io",
+  "http://127.0.0.1:4173",
+  "http://localhost:4173",
+]);
 
 const demoSource = (name, url) => ({ name, url, domain: new URL(url).hostname });
 const DEMO_STORIES = [
@@ -53,6 +58,18 @@ function securityHeaders() {
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
     "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   };
+}
+
+function withCors(response, request) {
+  const origin = request.headers.get("origin");
+  if (!origin || !ALLOWED_ORIGINS.has(origin)) return response;
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", origin);
+  headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
+  headers.set("access-control-allow-headers", "Content-Type, X-Moodwire-Visitor");
+  headers.set("access-control-max-age", "86400");
+  headers.append("vary", "Origin");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 function decodeXml(value = "") {
@@ -325,9 +342,14 @@ async function snapshotForRequest(env, ctx) {
 
 async function visitorId(request) {
   const authenticatedId = request.headers.get("oai-authenticated-user-id");
-  if (!authenticatedId) return null;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(authenticatedId));
-  return `member-${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  const anonymousId = request.headers.get("x-moodwire-visitor");
+  const identity = authenticatedId
+    ? `member:${authenticatedId}`
+    : anonymousId && /^[a-z0-9_-]{16,128}$/i.test(anonymousId) ? `guest:${anonymousId}` : null;
+  if (!identity) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
+  const prefix = authenticatedId ? "member" : "guest";
+  return `${prefix}-${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 async function storyIsKnown(env, storyId) {
@@ -437,15 +459,20 @@ async function handleInteraction(request, env) {
 
 async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
+  if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
+    const origin = request.headers.get("origin");
+    const response = new Response(null, { status: origin && ALLOWED_ORIGINS.has(origin) ? 204 : 403, headers: securityHeaders() });
+    return withCors(response, request);
+  }
   if (request.method === "GET" && url.pathname === "/") return new Response(INDEX_HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache", ...securityHeaders() } });
   if (request.method === "GET" && url.pathname === "/styles.css") return new Response(STYLES_CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=300", ...securityHeaders() } });
   if (request.method === "GET" && url.pathname === "/app.js") return new Response(CLIENT_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=300", ...securityHeaders() } });
-  if (request.method === "GET" && url.pathname === "/api/news") return handleNews(request, env, ctx);
-  if (request.method === "POST" && url.pathname === "/api/vote") return handleVote(request, env);
-  if (request.method === "POST" && url.pathname === "/api/interaction") return handleInteraction(request, env);
+  if (request.method === "GET" && url.pathname === "/api/news") return withCors(await handleNews(request, env, ctx), request);
+  if (request.method === "POST" && url.pathname === "/api/vote") return withCors(await handleVote(request, env), request);
+  if (request.method === "POST" && url.pathname === "/api/interaction") return withCors(await handleInteraction(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/health") {
     const snapshot = memorySnapshot || await readStoredSnapshot(env);
-    return json({ ok: true, refreshedAt: snapshot?.refreshedAt || null, activeSources: snapshot?.activeSources || 0, totalSources: FEEDS.length });
+    return withCors(json({ ok: true, refreshedAt: snapshot?.refreshedAt || null, activeSources: snapshot?.activeSources || 0, totalSources: FEEDS.length }), request);
   }
   if (request.method === "GET" && url.pathname === "/robots.txt") return new Response("User-agent: *\nDisallow:\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
   return new Response("Not found", { status: 404, headers: securityHeaders() });
