@@ -19,6 +19,6 @@ The production artifact is a dependency-free Cloudflare Worker. `src/` contains 
 
 The Worker exposes a scheduled handler and also refreshes opportunistically when the active site requests news after the one-minute cache expires. This keeps the visible site current even on hosting surfaces where a cron trigger is not attached.
 
-## GitHub Pages preview
+## GitHub Pages frontend
 
-The repository includes a GitHub Actions workflow that publishes `src/` as an interactive static preview. On GitHub Pages, Moodwire clearly identifies itself as a preview and keeps reactions in the browser because Pages cannot execute the Worker API or D1 database. Deploy the Worker artifact separately to enable live RSS aggregation and shared voting.
+The repository includes a GitHub Actions workflow that publishes `src/` to GitHub Pages. The browser connects to the public Moodwire Worker for live RSS aggregation, article-level source links, and D1-backed reactions. If that API is temporarily unreachable, the interface keeps running with clearly labeled sample stories and retries automatically.
