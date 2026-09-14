@@ -16,11 +16,17 @@ assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8
 const scriptText = await script.text();
 assert.match(scriptText, /class="back-headline"/);
 assert.match(scriptText, /class="flip-count"/);
+assert.match(scriptText, /card\.dataset\.userVote = selected \|\| ""/);
+assert.doesNotMatch(scriptText, /class="card-index"/);
+assert.doesNotMatch(scriptText, /class="consensus"/);
 assert.doesNotMatch(scriptText, /label: "(?:hopeful|concerned|uplifted|heavy|balanced)"/);
 
 const stylesheet = await worker.fetch(new Request("https://moodwire.test/styles.css"), {}, context);
 const stylesheetText = await stylesheet.text();
 assert.doesNotMatch(stylesheetText, /-webkit-line-clamp/);
+assert.match(stylesheetText, /\.flip-button::before/);
+assert.match(stylesheetText, /data-user-vote="happy"/);
+assert.doesNotMatch(stylesheetText, /\.flip-button[^\n]*transform:/);
 
 const news = await worker.fetch(new Request("https://moodwire.test/api/news"), {}, context);
 const payload = await news.json();

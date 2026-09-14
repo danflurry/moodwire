@@ -216,9 +216,7 @@
     article.innerHTML = `
       <div class="card-rotator">
         <section class="card-face card-front">
-          <div class="card-top"><span class="card-index"></span></div>
           <div class="card-body">
-            <p class="consensus"></p>
             <h2></h2>
             <div class="card-meta"><span class="reaction-count"></span><span class="mood-word"></span><span class="mood-meter" aria-hidden="true"><i class="meter-happy"></i><i class="meter-neutral"></i><i class="meter-sad"></i></span></div>
           </div>
@@ -244,7 +242,7 @@
     return article;
   }
 
-  function updateCard(story, visualIndex) {
+  function updateCard(story) {
     const card = state.elements.get(story.id) || createCard(story);
     const count = totals(story);
     const total = Math.max(1, count.happy + count.neutral + count.sad);
@@ -253,6 +251,7 @@
     const selected = state.humanVotes[story.id];
     const sourceCount = story.sources.length;
     card.dataset.mood = mood.tone;
+    card.dataset.userVote = selected || "";
     card.style.setProperty("--mood-color", `rgb(${palette.accent.join(", ")})`);
     card.style.setProperty("--mood-surface", `rgb(${palette.surface.join(", ")})`);
     card.style.setProperty("--mood-deep", `rgb(${palette.deep.join(", ")})`);
@@ -261,10 +260,8 @@
     card.style.setProperty("--happy-pct", `${(count.happy / total) * 100}%`);
     card.style.setProperty("--neutral-pct", `${(count.neutral / total) * 100}%`);
     card.style.setProperty("--sad-pct", `${(count.sad / total) * 100}%`);
-    card.querySelector(".card-index").textContent = String(visualIndex + 1).padStart(2, "0");
     card.querySelector(".flip-count").textContent = String(sourceCount);
     card.querySelector(".flip-button").setAttribute("aria-label", `Turn card over to view ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`);
-    card.querySelector(".consensus").textContent = sourceCount > 1 ? "Consensus headline" : "Latest headline";
     card.querySelector("h2").textContent = story.headline;
     card.querySelector(".back-headline").textContent = story.headline;
     card.querySelector(".reaction-count").textContent = `${total} reactions`;
@@ -319,11 +316,7 @@
       }
     }
     const ranked = [...state.stories].sort((a, b) => b.interactions - a.interactions || a.id.localeCompare(b.id));
-    ranked.forEach((story, index) => {
-      const label = state.elements.get(story.id)?.querySelector(".card-index");
-      if (label) label.textContent = String(index + 1).padStart(2, "0");
-    });
-    ranked.forEach((story, index) => updateCard(story, index));
+    ranked.forEach((story) => updateCard(story));
     layoutCards();
     stage.setAttribute("aria-busy", "false");
     loading?.classList.add("is-hidden");
@@ -360,10 +353,6 @@
     const cellW = (width - gap * (cols - 1)) / cols;
     const rowH = clamp(cellW * .84, 72, 108);
     const ranked = [...state.stories].sort((a, b) => b.interactions - a.interactions || a.id.localeCompare(b.id));
-    ranked.forEach((story, index) => {
-      const label = state.elements.get(story.id)?.querySelector(".card-index");
-      if (label) label.textContent = String(index + 1).padStart(2, "0");
-    });
     const rows = [];
     let prefixArea = 0;
     let maxRow = 0;
@@ -447,7 +436,7 @@
     card?.classList.remove("rating-open");
     card?.classList.add("rating-dismissed");
     if (card?.contains(document.activeElement)) document.activeElement.blur();
-    updateCard(story, [...state.stories].sort((a, b) => b.interactions - a.interactions).indexOf(story));
+    updateCard(story);
     layoutCards();
     if (!fromTool) showToast("The map is adjusting while your reaction saves…");
     if (!story.isLive) {
@@ -472,7 +461,7 @@
       if (state.voteVersions.get(storyId) === version && data.ratings) {
         story.community = data.ratings;
         story.humanApplied = true;
-        updateCard(story, [...state.stories].sort((a, b) => b.interactions - a.interactions).indexOf(story));
+        updateCard(story);
       }
       if (!fromTool && state.voteVersions.get(storyId) === version) showToast(`You marked this story ${value}. Reaction synced.`);
       return { storyId, emotion: value, mood: moodFor(story).label, persisted: true };
@@ -483,7 +472,7 @@
         else delete state.humanVotes[storyId];
         story.interactions = previousInteractions;
         try { localStorage.setItem("moodwire-votes", JSON.stringify(state.humanVotes)); } catch {}
-        updateCard(story, [...state.stories].sort((a, b) => b.interactions - a.interactions).indexOf(story));
+        updateCard(story);
         layoutCards();
         throw new Error(error instanceof Error ? error.message : "Reaction could not be saved");
       }
@@ -498,8 +487,7 @@
     const story = state.stories.find((item) => item.id === storyId);
     if (story) {
       story.interactions += 1;
-      const ranked = [...state.stories].sort((a, b) => b.interactions - a.interactions || a.id.localeCompare(b.id));
-      updateCard(story, ranked.indexOf(story));
+      updateCard(story);
       setTimeout(layoutCards, 80);
     }
     if (!story?.isLive) return;
@@ -524,8 +512,7 @@
     }
     story.interactions += 1;
     state.tick += 1;
-    const ranked = [...state.stories].sort((a, b) => b.interactions - a.interactions || a.id.localeCompare(b.id));
-    updateCard(story, ranked.indexOf(story));
+    updateCard(story);
     layoutCards();
   }
 
