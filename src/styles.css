@@ -145,9 +145,9 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .flip-button svg { display: none; }
 .back-button svg { width: 17px; height: 17px; }
 .flip-count { position: absolute; right: 9px; bottom: 9px; z-index: 1; min-width: 1ch; color: #071019; font-size: 11px; font-weight: 900; line-height: 1; text-shadow: 0 1px 0 rgba(255,255,255,.35); }
-.touch-rate, .back-button { display: grid; place-items: center; border: 1px solid var(--line); border-radius: 999px; background: rgba(5,8,13,.72); transition: background .18s ease, border-color .18s ease, transform .2s ease; backdrop-filter: blur(8px); }
-.touch-rate { display: none; left: 38px; bottom: 12px; height: 35px; padding: 0 12px; font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
-.back-button { right: 12px; bottom: 12px; width: 36px; height: 36px; transform: rotate(180deg); }
+.touch-rate, .back-button { display: grid; place-items: center; border: 1px solid var(--line); background: rgba(5,8,13,.72); transition: background .18s ease, border-color .18s ease, transform .2s ease, opacity .12s ease; backdrop-filter: blur(8px); }
+.touch-rate { display: none; left: 38px; bottom: 12px; z-index: 5; height: 35px; padding: 0 12px; border-radius: 5px; font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.back-button { right: 12px; bottom: 12px; width: 36px; height: 36px; border-radius: 999px; transform: rotate(180deg); }
 .back-button:hover, .back-button:focus-visible { border-color: var(--mood-color); background: color-mix(in srgb, var(--mood-color) 28%, #070a0f); }
 .back-button:hover, .back-button:focus-visible { transform: rotate(155deg); }
 
@@ -158,6 +158,7 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
 
 .reaction-panel { position: absolute; inset: 0; z-index: 6; display: grid; grid-template-columns: repeat(3, 1fr); background: rgba(5,8,13,.18); opacity: 0; pointer-events: none; transition: opacity .18s ease; }
 .story-card:not(.rating-dismissed) .card-front:hover .reaction-panel, .reaction-panel:focus-within, .story-card.rating-open .reaction-panel { opacity: 1; pointer-events: auto; }
+.story-card:not(.rating-dismissed) .card-front:hover .touch-rate, .story-card.rating-open .touch-rate, .story-card:has(.reaction-panel:focus-within) .touch-rate { opacity: 0; pointer-events: none; }
 .reaction-button { display: flex; align-items: center; justify-content: center; min-width: 0; border-right: 1px solid var(--line); background: transparent; color: white; cursor: pointer; transition: background .16s ease, color .16s ease; }
 .reaction-button:last-child { border-right: 0; }
 .reaction-button span { font-size: 10px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
