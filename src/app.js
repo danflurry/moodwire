@@ -50,7 +50,9 @@
   const SHAPES = [
     { area: 4, w: 2, h: 2 }, { area: 6, w: 3, h: 2 }, { area: 6, w: 2, h: 3 },
     { area: 8, w: 4, h: 2 }, { area: 8, w: 2, h: 4 }, { area: 9, w: 3, h: 3 },
-    { area: 12, w: 4, h: 3 }, { area: 12, w: 3, h: 4 }, { area: 16, w: 4, h: 4 },
+    { area: 10, w: 5, h: 2 }, { area: 10, w: 2, h: 5 },
+    { area: 12, w: 4, h: 3 }, { area: 12, w: 3, h: 4 },
+    { area: 15, w: 5, h: 3 }, { area: 15, w: 3, h: 5 }, { area: 16, w: 4, h: 4 },
   ];
   const state = {
     stories: [],
@@ -229,7 +231,6 @@
           <button class="flip-button" type="button" data-action="flip" aria-label="Turn card over to view sources"><span class="flip-count"></span>${ICONS.flip}</button>
         </section>
         <section class="card-face card-back" aria-hidden="true">
-          <p class="back-kicker">THE REPORTING BEHIND THIS CARD</p>
           <h3 class="back-headline"></h3>
           <div class="source-grid"></div>
           <button class="back-button" type="button" data-action="back" aria-label="Turn card back to the headline">${ICONS.back}</button>
@@ -301,8 +302,8 @@
     const backHeading = card.querySelector(".back-headline");
     if (backHeading) {
       const backPenalty = Math.max(0, story.headline.length - 48) * .065;
-      const backAreaBonus = clamp((cardWidth * cardHeight - 42_000) / 24_000, 0, 3);
-      backHeading.style.fontSize = `${clamp(19 - backPenalty + backAreaBonus, 10.5, 22).toFixed(1)}px`;
+      const backAreaBonus = clamp((cardWidth * cardHeight - 42_000) / 30_000, 0, 1.5);
+      backHeading.style.fontSize = `${clamp(14 - backPenalty + backAreaBonus, 9.5, 15.5).toFixed(1)}px`;
     }
   }
 
@@ -324,10 +325,11 @@
 
   function desiredShape(story, cols) {
     const desired = clamp(Math.round(story.sources.length || 4), 4, 16);
+    const preferredRatio = story.headline.length > 78 ? 1.55 : story.sources.length >= 8 ? .78 : 1.15;
     const options = SHAPES.filter((shape) => shape.w <= cols).sort((a, b) => {
       const area = Math.abs(a.area - desired) - Math.abs(b.area - desired);
       if (area) return area;
-      return Math.abs(a.w / a.h - 1.25) - Math.abs(b.w / b.h - 1.25);
+      return Math.abs(a.w / a.h - preferredRatio) - Math.abs(b.w / b.h - preferredRatio);
     });
     return options.slice(0, 5);
   }

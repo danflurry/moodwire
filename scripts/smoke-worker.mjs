@@ -17,8 +17,11 @@ const scriptText = await script.text();
 assert.match(scriptText, /class="back-headline"/);
 assert.match(scriptText, /class="flip-count"/);
 assert.match(scriptText, /card\.dataset\.userVote = selected \|\| ""/);
+assert.match(scriptText, /area: 4, w: 2, h: 2/);
+assert.match(scriptText, /preferredRatio/);
 assert.doesNotMatch(scriptText, /class="card-index"/);
 assert.doesNotMatch(scriptText, /class="consensus"/);
+assert.doesNotMatch(scriptText, /class="back-kicker"/);
 assert.doesNotMatch(scriptText, /label: "(?:hopeful|concerned|uplifted|heavy|balanced)"/);
 
 const stylesheet = await worker.fetch(new Request("https://moodwire.test/styles.css"), {}, context);
@@ -26,6 +29,10 @@ const stylesheetText = await stylesheet.text();
 assert.doesNotMatch(stylesheetText, /-webkit-line-clamp/);
 assert.match(stylesheetText, /\.flip-button::before/);
 assert.match(stylesheetText, /data-user-vote="happy"/);
+assert.match(stylesheetText, /\.card-front[^\n]*background-color: var\(--mood-color\)/);
+assert.match(stylesheetText, /\.card-back[^\n]*background-color: var\(--mood-deep\)/);
+assert.match(stylesheetText, /\.map-body \{ display: block; \}/);
+assert.doesNotMatch(stylesheetText, /\.vertical-axis/);
 assert.doesNotMatch(stylesheetText, /\.flip-button[^\n]*transform:/);
 
 const news = await worker.fetch(new Request("https://moodwire.test/api/news"), {}, context);
