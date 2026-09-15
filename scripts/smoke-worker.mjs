@@ -13,6 +13,9 @@ const pageText = await page.text();
 assert.match(pageText, /Moodwire live emotional news map/);
 assert.match(pageText, /MORE POPULAR/);
 assert.match(pageText, /LESS POPULAR/);
+assert.match(pageText, /id="mood-filter-happy"/);
+assert.match(pageText, /id="mood-filter-sad"/);
+assert.match(pageText, /Filter stories by aggregate mood/);
 
 const script = await worker.fetch(new Request("https://moodwire.test/app.js"), {}, context);
 assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
@@ -22,6 +25,11 @@ assert.match(scriptText, /class="flip-count"/);
 assert.match(scriptText, /card\.dataset\.userVote = selected \|\| ""/);
 assert.match(scriptText, /area: 4, w: 2, h: 2/);
 assert.match(scriptText, /preferredRatio/);
+assert.match(scriptText, /function visibleStories\(\)/);
+assert.match(scriptText, /moodMinPosition/);
+assert.match(scriptText, /moodMaxPosition/);
+assert.match(scriptText, /moodHappyFilter\?\.addEventListener\("input", applyMoodFilter\)/);
+assert.match(scriptText, /return visibleStories\(\)\.map/);
 assert.doesNotMatch(scriptText, /class="card-index"/);
 assert.doesNotMatch(scriptText, /class="consensus"/);
 assert.doesNotMatch(scriptText, /class="back-kicker"/);
@@ -41,6 +49,11 @@ assert.match(stylesheetText, /\.card-back[^\n]*background-image: none/);
 assert.match(stylesheetText, /background-color: #242a32/);
 assert.match(stylesheetText, /\.card-front::after, \.card-back::after/);
 assert.match(stylesheetText, /\.vertical-axis/);
+assert.match(stylesheetText, /\.story-card\.is-flipped \.card-back \{ visibility: visible/);
+assert.match(stylesheetText, /\.story-card\.is-flipped \.card-front \{ visibility: hidden/);
+assert.match(stylesheetText, /\.flip-button::before, \.back-button::before/);
+assert.match(stylesheetText, /\.mood-filter-range\.happy-neutral/);
+assert.match(stylesheetText, /\.mood-filter-range\.neutral-sad/);
 assert.match(stylesheetText, /\.reaction-button\[data-value="happy"\] \{ background:/);
 assert.match(stylesheetText, /\.reaction-button\[data-value="neutral"\] \{ background:/);
 assert.match(stylesheetText, /\.reaction-button\[data-value="sad"\] \{ background:/);
@@ -62,6 +75,29 @@ const livePayload = await liveNews.json();
 assert.equal(livePayload.mode, "live");
 assert.equal(livePayload.activeSources, 20);
 assert.ok(livePayload.stories.some((story) => story.sources.length === 16));
+
+const clusteringTitles = new Map([
+  ["feeds.bbci.co.uk", "Supreme Court rejects Trump's mail-in ballot restrictions for midterms"],
+  ["feeds.npr.org", "Supreme Court blocks Trump's plan to restrict mail-in ballots"],
+  ["rss.nytimes.com", "US confirms for first time it has deployed weapons in space"],
+  ["www.theguardian.com", "US confirms it has weapons in space to counter hostile powers"],
+  ["www.aljazeera.com", "Supreme Court hears challenge to online age verification law"],
+]);
+globalThis.fetch = async (url) => {
+  const hostname = new URL(String(url)).hostname;
+  const title = clusteringTitles.get(hostname);
+  if (!title) return new Response("Unavailable", { status: 503 });
+  const feed = `<?xml version="1.0"?><rss><channel><item><title>${title}</title><link>https://${hostname}/story-${encodeURIComponent(title)}</link><pubDate>${new Date().toUTCString()}</pubDate></item></channel></rss>`;
+  return new Response(feed, { status: 200, headers: { "content-type": "application/rss+xml" } });
+};
+const { default: clusteringWorker } = await import(`${moduleUrl.href}?smoke-clustering=${Date.now()}`);
+const clusteredNews = await clusteringWorker.fetch(new Request("https://moodwire.test/api/news"), {}, context);
+const clusteredPayload = await clusteredNews.json();
+assert.equal(clusteredPayload.mode, "live");
+assert.equal(clusteredPayload.activeSources, clusteringTitles.size);
+assert.deepEqual(clusteredPayload.stories.map((story) => story.sources.length).sort((a, b) => b - a), [2, 2, 1]);
+assert.ok(clusteredPayload.stories.some((story) => /mail-in ballot/i.test(story.headline) && story.sources.length === 2));
+assert.ok(clusteredPayload.stories.some((story) => /weapons in space/i.test(story.headline) && story.sources.length === 2));
 
 const localVote = await liveWorker.fetch(new Request("https://moodwire.test/api/vote", {
   method: "POST",

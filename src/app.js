@@ -8,6 +8,10 @@
   const sourceTotal = document.querySelector("#source-total");
   const feedNote = document.querySelector("#feed-note");
   const toast = document.querySelector("#toast");
+  const moodHappyFilter = document.querySelector("#mood-filter-happy");
+  const moodSadFilter = document.querySelector("#mood-filter-sad");
+  const moodFilterStatus = document.querySelector("#mood-filter-status");
+  const filterEmpty = document.querySelector("#filter-empty");
   const API_BASE = (document.querySelector('meta[name="moodwire-api-base"]')?.content || "").trim().replace(/\/+$/, "");
   const VISITOR_ID = readVisitorId();
 
@@ -60,6 +64,8 @@
     toastTimer: 0,
     resizeTimer: 0,
     live: false,
+    moodMinPosition: Number(moodHappyFilter?.value || 0),
+    moodMaxPosition: Number(moodSadFilter?.value || 100),
     voteQueues: new Map(),
     voteVersions: new Map(),
   };
@@ -185,6 +191,37 @@
     if (score > .11) return { tone: "happy", label: "Happy", score };
     if (score < -.11) return { tone: "sad", label: "Sad", score };
     return { tone: "neutral", label: "Neutral", score };
+  }
+
+  function moodPosition(story) {
+    return ((1 - clamp(moodFor(story).score, -1, 1)) / 2) * 100;
+  }
+
+  function visibleStories() {
+    return state.stories.filter((story) => {
+      const position = moodPosition(story);
+      return position >= state.moodMinPosition && position <= state.moodMaxPosition;
+    });
+  }
+
+  function describeMoodBoundary(value, side) {
+    if (value === 0) return "Happiest";
+    if (value === 50) return "Neutral";
+    if (value === 100) return "Saddest";
+    const distance = side === "happy" ? value * 2 : (value - 50) * 2;
+    return `${Math.round(distance)}% from ${side === "happy" ? "Happy toward Neutral" : "Neutral toward Sad"}`;
+  }
+
+  function applyMoodFilter() {
+    state.moodMinPosition = clamp(Number(moodHappyFilter?.value || 0), 0, 50);
+    state.moodMaxPosition = clamp(Number(moodSadFilter?.value || 100), 50, 100);
+    moodHappyFilter?.setAttribute("aria-valuetext", describeMoodBoundary(state.moodMinPosition, "happy"));
+    moodSadFilter?.setAttribute("aria-valuetext", describeMoodBoundary(state.moodMaxPosition, "sad"));
+    document.documentElement.style.setProperty("--happy-filter-position", `${state.moodMinPosition * 2}%`);
+    document.documentElement.style.setProperty("--sad-filter-position", `${(state.moodMaxPosition - 50) * 2}%`);
+    const shown = visibleStories().length;
+    if (moodFilterStatus) moodFilterStatus.textContent = `Showing ${shown} of ${state.stories.length} stories in the selected mood range`;
+    layoutCards();
   }
 
   function escapeHtml(value) {
@@ -345,12 +382,21 @@
   function layoutCards() {
     const width = stage.clientWidth;
     if (!width || !state.stories.length) return;
+    const ranked = visibleStories().sort((a, b) => b.interactions - a.interactions || a.id.localeCompare(b.id));
+    const visibleIds = new Set(ranked.map((story) => story.id));
+    for (const [id, card] of state.elements) card.hidden = !visibleIds.has(id);
+    if (filterEmpty) filterEmpty.hidden = ranked.length > 0;
+    if (moodFilterStatus) moodFilterStatus.textContent = `Showing ${ranked.length} of ${state.stories.length} stories in the selected mood range`;
+    if (!ranked.length) {
+      const stageTop = stage.getBoundingClientRect().top + window.scrollY;
+      stage.style.height = `${Math.max(360, document.documentElement.clientHeight - stageTop - 10)}px`;
+      return;
+    }
     const gap = width < 640 ? 9 : 12;
     const minCell = width < 640 ? 68 : width < 960 ? 76 : 86;
     const cols = clamp(Math.floor((width + gap) / (minCell + gap)), 4, 14);
     const cellW = (width - gap * (cols - 1)) / cols;
     const rowH = clamp(cellW * .84, 72, 108);
-    const ranked = [...state.stories].sort((a, b) => b.interactions - a.interactions || a.id.localeCompare(b.id));
     const rows = [];
     let prefixArea = 0;
     let maxRow = 0;
@@ -603,7 +649,7 @@
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute() {
-        return state.stories.map((story) => ({ id: story.id, headline: story.headline, mood: moodFor(story).label, sources: story.sources.length, reactions: totals(story) }));
+        return visibleStories().map((story) => ({ id: story.id, headline: story.headline, mood: moodFor(story).label, sources: story.sources.length, reactions: totals(story) }));
       },
     }, { signal: lifecycle.signal })).catch(() => {});
     Promise.resolve(context.registerTool({
@@ -621,6 +667,9 @@
 
   const dateFormatter = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
   document.querySelector("#date-stamp").textContent = dateFormatter.format(new Date()).toUpperCase();
+  moodHappyFilter?.addEventListener("input", applyMoodFilter);
+  moodSadFilter?.addEventListener("input", applyMoodFilter);
+  applyMoodFilter();
   mergeStories(SEED_STORIES, false);
   fetchNews(true);
   registerWebMcp();

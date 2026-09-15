@@ -22,6 +22,14 @@ const FEEDS = [
 ];
 
 const STOP_WORDS = new Set("a an and are as at be been being but by for from had has have he her hers him his how i if in into is it its just may more most new no not of on or our out over she so than that the their them there they this to under up was we were what when where which who why will with would you your after before amid across says say said latest live news update updates".split(" "));
+const IMPORTANT_SHORT_TOKENS = new Set(["ai", "eu", "uk", "un", "us"]);
+const TOKEN_ALIASES = new Map(Object.entries({
+  ballots: "ballot", ballot: "ballot",
+  restrictions: "restrict", restriction: "restrict", restricted: "restrict", restricting: "restrict", restricts: "restrict",
+  blocked: "block", blocks: "block", blocking: "block", rejected: "block", rejects: "block", rejecting: "block",
+  deployed: "deploy", deploys: "deploy", deployment: "deploy", deployments: "deploy",
+  weapons: "weapon", weaponry: "weapon",
+}));
 const MAX_CACHE_AGE = 60_000;
 const MAX_FEED_BYTES = 1_100_000;
 let memorySnapshot = null;
@@ -117,8 +125,19 @@ function parseFeed(xml, feed) {
   return items;
 }
 
+function normalizeToken(rawToken) {
+  let token = rawToken.toLowerCase();
+  if (TOKEN_ALIASES.has(token)) return TOKEN_ALIASES.get(token);
+  if (token.length > 5 && token.endsWith("ies")) token = `${token.slice(0, -3)}y`;
+  else if (token.length > 5 && token.endsWith("ing")) token = token.slice(0, -3);
+  else if (token.length > 4 && token.endsWith("ed")) token = token.slice(0, -2);
+  else if (token.length > 4 && token.endsWith("s") && !token.endsWith("ss")) token = token.slice(0, -1);
+  return TOKEN_ALIASES.get(token) || token;
+}
+
 function titleTokens(title) {
-  return new Set(title.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((token) => token.length > 2 && !STOP_WORDS.has(token)));
+  const tokens = title.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/gi, " ").split(/\s+/);
+  return new Set(tokens.filter(Boolean).map(normalizeToken).filter((token) => (token.length > 2 || IMPORTANT_SHORT_TOKENS.has(token)) && !STOP_WORDS.has(token)));
 }
 
 function similarity(left, right) {
@@ -127,6 +146,15 @@ function similarity(left, right) {
   const smaller = Math.max(1, Math.min(left.size, right.size));
   const union = Math.max(1, left.size + right.size - shared);
   return { shared, score: (shared / smaller) * .72 + (shared / union) * .28 };
+}
+
+function sameEvent(left, right) {
+  const match = similarity(left, right);
+  const smaller = Math.min(left.size, right.size);
+  const acceptable = match.shared >= 5
+    || match.shared >= 4 && match.score >= .42
+    || match.shared >= 3 && match.score >= (smaller <= 5 ? .62 : .52);
+  return { ...match, acceptable };
 }
 
 function hashId(value) {
@@ -155,9 +183,12 @@ function clusterEntries(entries) {
     if (item.tokens.size < 2) continue;
     let best = null;
     for (const cluster of clusters) {
-      const match = similarity(item.tokens, cluster.seed.tokens);
-      const acceptable = match.shared >= 3 && match.score >= .48 || match.shared >= 5;
-      if (acceptable && (!best || match.score > best.score)) best = { cluster, score: match.score };
+      let clusterMatch = null;
+      for (const member of cluster.members) {
+        const match = sameEvent(item.tokens, member.tokens);
+        if (match.acceptable && (!clusterMatch || match.score > clusterMatch.score)) clusterMatch = match;
+      }
+      if (clusterMatch && (!best || clusterMatch.score > best.score)) best = { cluster, score: clusterMatch.score };
     }
     if (best) best.cluster.members.push(item);
     else clusters.push({ seed: item, members: [item] });

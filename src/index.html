@@ -28,10 +28,19 @@
 
     <h1 class="sr-only" id="page-title">Moodwire live emotional news map</h1>
     <section class="map" aria-labelledby="page-title">
-      <div class="axis-row" aria-hidden="true">
-        <span><i class="axis-swatch happy"></i>HAPPIER</span>
-        <span><i class="axis-swatch neutral"></i>NEUTRAL</span>
-        <span><i class="axis-swatch sad"></i>SADDER</span>
+      <div class="axis-row">
+        <div class="axis-labels" aria-hidden="true">
+          <span><i class="axis-swatch happy"></i>HAPPIER</span>
+          <span><i class="axis-swatch neutral"></i>NEUTRAL</span>
+          <span><i class="axis-swatch sad"></i>SADDER</span>
+        </div>
+        <div class="mood-filter" role="group" aria-label="Filter stories by aggregate mood">
+          <label class="sr-only" for="mood-filter-happy">Happy-to-neutral filter boundary</label>
+          <input id="mood-filter-happy" class="mood-filter-range happy-neutral" type="range" min="0" max="50" value="0" step="1">
+          <label class="sr-only" for="mood-filter-sad">Neutral-to-sad filter boundary</label>
+          <input id="mood-filter-sad" class="mood-filter-range neutral-sad" type="range" min="50" max="100" value="100" step="1">
+        </div>
+        <output class="sr-only" id="mood-filter-status" aria-live="polite">Showing all moods</output>
       </div>
       <div class="map-body">
         <div class="vertical-axis" aria-hidden="true"><span>MORE POPULAR</span><i></i><span>LESS POPULAR</span></div>
@@ -40,6 +49,7 @@
             <span class="loading-mark"><i></i><i></i><i></i></span>
             <p>Gathering the front pages…</p>
           </div>
+          <p class="filter-empty" id="filter-empty" hidden>No stories currently fall inside this mood range.</p>
         </div>
       </div>
     </section>
