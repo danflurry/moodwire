@@ -149,6 +149,7 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .story-card.size-small .card-body { padding: 13px 17px 14px; }
 .story-card.size-small .card-meta { grid-template-columns: 1fr; }
 .story-card.size-small .reaction-count { display: none; }
+.story-card.headline-tight .card-meta { display: none; }
 .card-meta { display: grid; grid-template-columns: 1fr; align-items: center; gap: 8px; margin-top: 13px; padding-top: 10px; border-top: 1px solid rgba(7,16,25,.2); color: rgba(7,16,25,.82); font-size: 10px; font-weight: 800; }
 .mood-meter { grid-column: 1 / -1; display: flex; height: 4px; overflow: hidden; border-radius: 99px; background: rgba(7,16,25,.16); }
 .mood-meter i { height: 100%; transition: width .35s ease; }

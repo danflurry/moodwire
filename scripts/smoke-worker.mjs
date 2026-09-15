@@ -34,6 +34,10 @@ assert.match(scriptText, /moodHappyFilter\?\.addEventListener\("input", \(\) => 
 assert.match(scriptText, /moodSadFilter\?\.addEventListener\("input", \(\) => applyMoodFilter\("right"\)\)/);
 assert.match(scriptText, /moodHappyFilter\.max = String\(right\)/);
 assert.match(scriptText, /moodSadFilter\.min = String\(left\)/);
+assert.match(scriptText, /let low = \.75/);
+assert.match(scriptText, /card\.classList\.add\("headline-tight"\)/);
+assert.match(scriptText, /const moodCenter = widestHalf \+ \(moodPosition\(story\) \/ 100\)/);
+assert.match(scriptText, /placement\.moodCenter = moodCenter/);
 assert.match(scriptText, /return visibleStories\(\)\.map/);
 assert.doesNotMatch(scriptText, /class="card-index"/);
 assert.doesNotMatch(scriptText, /class="consensus"/);
@@ -59,6 +63,7 @@ assert.match(stylesheetText, /\.story-card\.is-flipped \.card-front \{ visibilit
 assert.match(stylesheetText, /\.flip-button::before, \.back-button::before/);
 assert.match(stylesheetText, /\.mood-filter-range\.left-boundary::/);
 assert.match(stylesheetText, /\.mood-filter-range\.right-boundary::/);
+assert.match(stylesheetText, /\.story-card\.headline-tight \.card-meta \{ display: none/);
 assert.match(stylesheetText, /clip-path: polygon\(0 0, 100% 50%, 0 100%\)/);
 assert.match(stylesheetText, /clip-path: polygon\(100% 0, 0 50%, 100% 100%\)/);
 assert.match(stylesheetText, /\.reaction-button\[data-value="happy"\] \{ background:/);

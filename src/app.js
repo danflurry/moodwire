@@ -331,20 +331,36 @@
     if (!heading || !body) return;
     const lengthPenalty = Math.max(0, story.headline.length - 52) * .095;
     const areaBonus = clamp((cardWidth * cardHeight - 42_000) / 18_000, 0, 4);
-    let low = 10;
-    let high = clamp(27 - lengthPenalty + areaBonus, 14, 30);
-    let best = low;
-    for (let attempt = 0; attempt < 7; attempt += 1) {
-      const size = (low + high) / 2;
-      heading.style.fontSize = `${size}px`;
-      if (body.scrollHeight <= body.clientHeight + 1) {
-        best = size;
-        low = size;
-      } else {
-        high = size;
+    const maximum = clamp(27 - lengthPenalty + areaBonus, 14, 30);
+    const findLargestFit = () => {
+      let low = .75;
+      let high = maximum;
+      let best = low;
+      heading.style.fontSize = `${low}px`;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const size = (low + high) / 2;
+        heading.style.fontSize = `${size}px`;
+        if (body.scrollHeight <= body.clientHeight + 1) {
+          best = size;
+          low = size;
+        } else {
+          high = size;
+        }
       }
+      heading.style.fontSize = `${best.toFixed(2)}px`;
+      return best;
+    };
+    card.classList.remove("headline-tight");
+    let best = findLargestFit();
+    if (body.scrollHeight > body.clientHeight + 1) {
+      card.classList.add("headline-tight");
+      best = findLargestFit();
     }
-    heading.style.fontSize = `${best.toFixed(1)}px`;
+    for (let attempt = 0; attempt < 4 && body.scrollHeight > body.clientHeight + 1; attempt += 1) {
+      const ratio = clamp(body.clientHeight / Math.max(1, body.scrollHeight), .15, .96);
+      best = Math.max(.35, best * ratio * .96);
+      heading.style.fontSize = `${best.toFixed(2)}px`;
+    }
     const backHeading = card.querySelector(".back-headline");
     if (backHeading) {
       const backPenalty = Math.max(0, story.headline.length - 48) * .065;
@@ -449,6 +465,38 @@
       card.style.setProperty("--y", `${best.row * (rowH + gap)}px`);
       card.classList.toggle("size-small", cardWidth < 245 || cardHeight < 205);
       fitHeadline(card, story, cardWidth, cardHeight);
+    });
+
+    const cardDimensions = new Map(ranked.map((story) => {
+      const placement = state.placements.get(story.id);
+      return [story.id, {
+        width: placement.w * cellW + (placement.w - 1) * gap,
+        height: placement.h * rowH + (placement.h - 1) * gap,
+      }];
+    }));
+    const widestHalf = Math.max(...[...cardDimensions.values()].map(({ width: cardWidth }) => cardWidth / 2));
+    const placedRects = [];
+    maxRow = 0;
+    ranked.forEach((story) => {
+      const placement = state.placements.get(story.id);
+      const dimensions = cardDimensions.get(story.id);
+      const moodCenter = widestHalf + (moodPosition(story) / 100) * Math.max(0, width - widestHalf * 2);
+      const x = clamp(moodCenter - dimensions.width / 2, 0, width - dimensions.width);
+      let row = placement.row;
+      while (placedRects.some((rect) => (
+        x < rect.x + rect.width + gap
+        && x + dimensions.width + gap > rect.x
+        && row < rect.row + rect.heightRows
+        && row + placement.h > rect.row
+      ))) row += 1;
+      placement.row = row;
+      placement.moodCenter = moodCenter;
+      placedRects.push({ x, width: dimensions.width, row, heightRows: placement.h });
+      maxRow = Math.max(maxRow, row + placement.h);
+      const card = state.elements.get(story.id);
+      card.style.setProperty("--x", `${x}px`);
+      card.style.setProperty("--y", `${row * (rowH + gap)}px`);
+      fitHeadline(card, story, dimensions.width, dimensions.height);
     });
     const contentHeight = maxRow * rowH + Math.max(0, maxRow - 1) * gap + 18;
     const stageTop = stage.getBoundingClientRect().top + window.scrollY;
