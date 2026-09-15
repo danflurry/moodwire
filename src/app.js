@@ -12,9 +12,6 @@
   const VISITOR_ID = readVisitorId();
 
   const ICONS = {
-    happy: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 10h.01M16 10h.01M8 15c1.2 1.1 2.5 1.6 4 1.6s2.8-.5 4-1.6"/></svg>',
-    neutral: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 10h.01M16 10h.01M8.5 15h7"/></svg>',
-    sad: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 10h.01M16 10h.01M8 16c1.2-1.1 2.5-1.6 4-1.6s2.8.5 4 1.6"/></svg>',
     flip: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8.2A7.5 7.5 0 0 1 19.7 12M4.3 12A7.5 7.5 0 0 0 17.9 15.8"/></svg>',
     back: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8.2A7.5 7.5 0 0 1 19.7 12M4.3 12A7.5 7.5 0 0 0 17.9 15.8"/></svg>',
   };
@@ -220,13 +217,13 @@
         <section class="card-face card-front">
           <div class="card-body">
             <h2></h2>
-            <div class="card-meta"><span class="reaction-count"></span><span class="mood-word"></span><span class="mood-meter" aria-hidden="true"><i class="meter-happy"></i><i class="meter-neutral"></i><i class="meter-sad"></i></span></div>
+            <div class="card-meta"><span class="reaction-count"></span><span class="mood-meter" aria-hidden="true"><i class="meter-happy"></i><i class="meter-neutral"></i><i class="meter-sad"></i></span></div>
           </div>
           <button class="touch-rate" type="button" data-action="touch-rate" aria-label="Show reaction choices">React</button>
           <div class="reaction-panel" role="group" aria-label="How does this story make you feel?">
-            <button class="reaction-button" type="button" data-action="rate" data-value="happy">${ICONS.happy}<span>Happy</span></button>
-            <button class="reaction-button" type="button" data-action="rate" data-value="neutral">${ICONS.neutral}<span>Neutral</span></button>
-            <button class="reaction-button" type="button" data-action="rate" data-value="sad">${ICONS.sad}<span>Sad</span></button>
+            <button class="reaction-button" type="button" data-action="rate" data-value="happy"><span>Happy</span></button>
+            <button class="reaction-button" type="button" data-action="rate" data-value="neutral"><span>Neutral</span></button>
+            <button class="reaction-button" type="button" data-action="rate" data-value="sad"><span>Sad</span></button>
           </div>
           <button class="flip-button" type="button" data-action="flip" aria-label="Turn card over to view sources"><span class="flip-count"></span>${ICONS.flip}</button>
         </section>
@@ -266,7 +263,6 @@
     card.querySelector("h2").textContent = story.headline;
     card.querySelector(".back-headline").textContent = story.headline;
     card.querySelector(".reaction-count").textContent = `${total} reactions`;
-    card.querySelector(".mood-word").textContent = mood.label;
     card.querySelectorAll(".reaction-button").forEach((button) => {
       button.classList.toggle("is-selected", button.dataset.value === selected);
       button.setAttribute("aria-pressed", String(button.dataset.value === selected));

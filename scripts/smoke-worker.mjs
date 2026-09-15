@@ -9,7 +9,10 @@ const context = { waitUntil() {} };
 
 const page = await worker.fetch(new Request("https://moodwire.test/"), {}, context);
 assert.equal(page.status, 200);
-assert.match(await page.text(), /Moodwire live emotional news map/);
+const pageText = await page.text();
+assert.match(pageText, /Moodwire live emotional news map/);
+assert.match(pageText, /MORE POPULAR/);
+assert.match(pageText, /LESS POPULAR/);
 
 const script = await worker.fetch(new Request("https://moodwire.test/app.js"), {}, context);
 assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
@@ -22,6 +25,8 @@ assert.match(scriptText, /preferredRatio/);
 assert.doesNotMatch(scriptText, /class="card-index"/);
 assert.doesNotMatch(scriptText, /class="consensus"/);
 assert.doesNotMatch(scriptText, /class="back-kicker"/);
+assert.doesNotMatch(scriptText, /class="mood-word"/);
+assert.doesNotMatch(scriptText, /ICONS\.(?:happy|neutral|sad)/);
 assert.doesNotMatch(scriptText, /label: "(?:hopeful|concerned|uplifted|heavy|balanced)"/);
 
 const stylesheet = await worker.fetch(new Request("https://moodwire.test/styles.css"), {}, context);
@@ -33,10 +38,15 @@ assert.match(stylesheetText, /\.card-front[^\n]*background-color: var\(--mood-co
 assert.match(stylesheetText, /\.card-back[^\n]*background-color: var\(--mood-deep\)/);
 assert.match(stylesheetText, /\.card-front[^\n]*background-image: none/);
 assert.match(stylesheetText, /\.card-back[^\n]*background-image: none/);
+assert.match(stylesheetText, /background-color: #242a32/);
+assert.match(stylesheetText, /\.card-front::after, \.card-back::after/);
+assert.match(stylesheetText, /\.vertical-axis/);
+assert.match(stylesheetText, /\.reaction-button\[data-value="happy"\] \{ background:/);
+assert.match(stylesheetText, /\.reaction-button\[data-value="neutral"\] \{ background:/);
+assert.match(stylesheetText, /\.reaction-button\[data-value="sad"\] \{ background:/);
 assert.doesNotMatch(stylesheetText, /\.card-face::before/);
 assert.doesNotMatch(stylesheetText, /@media \(hover: none\), \(pointer: coarse\) \{\s*\.touch-rate/);
-assert.match(stylesheetText, /\.map-body \{ display: block; \}/);
-assert.doesNotMatch(stylesheetText, /\.vertical-axis/);
+assert.match(stylesheetText, /\.map-body[^\n]*display: block/);
 assert.doesNotMatch(stylesheetText, /\.flip-button[^\n]*transform:/);
 
 const news = await worker.fetch(new Request("https://moodwire.test/api/news"), {}, context);

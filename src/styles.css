@@ -72,7 +72,10 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .axis-swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--mood-neutral); }
 .axis-swatch.happy { background: var(--mood-happy); }
 .axis-swatch.sad { background: var(--mood-sad); }
-.map-body { display: block; }
+.map-body { position: relative; display: block; }
+.vertical-axis { position: absolute; inset: 9px auto 9px 6px; z-index: 4; display: flex; width: 18px; flex-direction: column; align-items: center; justify-content: space-between; color: rgba(244,247,251,.74); font-size: 8px; font-weight: 900; letter-spacing: .1em; pointer-events: none; writing-mode: vertical-rl; transform: rotate(180deg); }
+.vertical-axis span { padding: 5px 3px; border-radius: 3px; background: rgba(7,10,15,.8); }
+.vertical-axis i { width: 1px; flex: 1; margin: 8px 0; background: linear-gradient(180deg, rgba(244,247,251,.75), rgba(244,247,251,.12)); }
 
 .story-stage {
   position: relative;
@@ -119,15 +122,15 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .card-face { position: absolute; inset: 0; isolation: isolate; overflow: hidden; border: 1px solid var(--mood-border); border-radius: 14px; color: var(--text); background-color: var(--mood-deep); background-image: none; box-shadow: 0 11px 28px var(--shadow); opacity: 1; backface-visibility: hidden; -webkit-backface-visibility: hidden; transition: background-color .35s ease, border-color .35s ease; }
 .card-back { display: flex; flex-direction: column; padding: 14px 14px 12px; background-color: var(--mood-deep); background-image: none; transform: rotateY(180deg) translateZ(.1px); }
 .card-front { display: flex; flex-direction: column; color: #071019; background-color: var(--mood-color); background-image: none; transform: rotateY(0deg) translateZ(.1px); }
+.story-card:not(.rating-dismissed) .card-front:hover, .story-card.rating-open .card-front, .story-card:has(.reaction-panel:focus-within) .card-front { color: var(--text); background-color: #242a32; }
+.story-card:not(.rating-dismissed) .card-front:hover .card-meta, .story-card.rating-open .card-meta, .story-card:has(.reaction-panel:focus-within) .card-meta { border-color: rgba(255,255,255,.18); color: rgba(255,255,255,.8); }
 .card-body { display: flex; min-height: 0; flex: 1; flex-direction: column; justify-content: flex-end; padding: 22px 21px 18px 20px; }
 .story-card h2 { display: block; flex: 0 0 auto; overflow: visible; margin: 0; font-family: var(--serif); font-size: 22px; font-weight: 400; letter-spacing: -.03em; line-height: 1.04; overflow-wrap: break-word; }
 .story-card.size-small h2 { font-size: 16px; }
 .story-card.size-small .card-body { padding: 13px 17px 14px; }
 .story-card.size-small .card-meta { grid-template-columns: 1fr; }
 .story-card.size-small .reaction-count { display: none; }
-.story-card.size-small .mood-word { justify-self: start; padding-right: 42px; }
-.card-meta { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px 10px; margin-top: 13px; padding-top: 10px; border-top: 1px solid rgba(7,16,25,.2); color: rgba(7,16,25,.82); font-size: 10px; font-weight: 800; }
-.mood-word { justify-self: end; overflow: hidden; padding-right: 38px; letter-spacing: .1em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.card-meta { display: grid; grid-template-columns: 1fr; align-items: center; gap: 8px; margin-top: 13px; padding-top: 10px; border-top: 1px solid rgba(7,16,25,.2); color: rgba(7,16,25,.82); font-size: 10px; font-weight: 800; }
 .mood-meter { grid-column: 1 / -1; display: flex; height: 4px; overflow: hidden; border-radius: 99px; background: rgba(7,16,25,.16); }
 .mood-meter i { height: 100%; transition: width .35s ease; }
 .mood-meter .meter-happy { width: var(--happy-pct); background: var(--mood-happy); }
@@ -148,20 +151,22 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .back-button:hover, .back-button:focus-visible { border-color: var(--mood-color); background: color-mix(in srgb, var(--mood-color) 28%, #070a0f); }
 .back-button:hover, .back-button:focus-visible { transform: rotate(155deg); }
 
-.card-front::after { content: ""; position: absolute; left: 0; bottom: 0; z-index: 7; width: 34px; height: 34px; opacity: 0; pointer-events: none; clip-path: polygon(0 0, 0 100%, 100% 100%); filter: drop-shadow(2px -2px 4px rgba(0,0,0,.28)); }
-.story-card[data-user-vote="happy"] .card-front::after { background: var(--mood-happy); opacity: 1; }
-.story-card[data-user-vote="neutral"] .card-front::after { background: var(--mood-neutral); opacity: 1; }
-.story-card[data-user-vote="sad"] .card-front::after { background: var(--mood-sad); opacity: 1; }
+.card-front::after, .card-back::after { content: ""; position: absolute; left: 0; bottom: 0; z-index: 7; width: 34px; height: 34px; opacity: 0; pointer-events: none; clip-path: polygon(0 0, 0 100%, 100% 100%); filter: drop-shadow(2px -2px 4px rgba(0,0,0,.28)); }
+.story-card[data-user-vote="happy"] .card-front::after, .story-card[data-user-vote="happy"] .card-back::after { background: var(--mood-happy); opacity: 1; }
+.story-card[data-user-vote="neutral"] .card-front::after, .story-card[data-user-vote="neutral"] .card-back::after { background: var(--mood-neutral); opacity: 1; }
+.story-card[data-user-vote="sad"] .card-front::after, .story-card[data-user-vote="sad"] .card-back::after { background: var(--mood-sad); opacity: 1; }
 
 .reaction-panel { position: absolute; inset: 0; z-index: 6; display: grid; grid-template-columns: repeat(3, 1fr); background: rgba(5,8,13,.18); opacity: 0; pointer-events: none; transition: opacity .18s ease; }
 .story-card:not(.rating-dismissed) .card-front:hover .reaction-panel, .reaction-panel:focus-within, .story-card.rating-open .reaction-panel { opacity: 1; pointer-events: auto; }
-.reaction-button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; min-width: 0; border-right: 1px solid var(--line); background: transparent; color: white; cursor: pointer; transition: background .16s ease, color .16s ease; }
+.reaction-button { display: flex; align-items: center; justify-content: center; min-width: 0; border-right: 1px solid var(--line); background: transparent; color: white; cursor: pointer; transition: background .16s ease, color .16s ease; }
 .reaction-button:last-child { border-right: 0; }
-.reaction-button svg { width: clamp(25px, 2.5vw, 34px); height: clamp(25px, 2.5vw, 34px); stroke-width: 1.55; }
 .reaction-button span { font-size: 10px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
-.reaction-button[data-value="happy"]:hover, .reaction-button[data-value="happy"]:focus-visible, .reaction-button[data-value="happy"].is-selected { background: color-mix(in srgb, var(--mood-happy) 46%, transparent); color: #fff; }
-.reaction-button[data-value="neutral"]:hover, .reaction-button[data-value="neutral"]:focus-visible, .reaction-button[data-value="neutral"].is-selected { background: color-mix(in srgb, var(--mood-neutral) 46%, transparent); color: #fff; }
-.reaction-button[data-value="sad"]:hover, .reaction-button[data-value="sad"]:focus-visible, .reaction-button[data-value="sad"].is-selected { background: color-mix(in srgb, var(--mood-sad) 46%, transparent); color: #fff; }
+.reaction-button[data-value="happy"] { background: color-mix(in srgb, var(--mood-happy) 48%, transparent); }
+.reaction-button[data-value="neutral"] { background: color-mix(in srgb, var(--mood-neutral) 48%, transparent); }
+.reaction-button[data-value="sad"] { background: color-mix(in srgb, var(--mood-sad) 48%, transparent); }
+.reaction-button[data-value="happy"]:hover, .reaction-button[data-value="happy"]:focus-visible, .reaction-button[data-value="happy"].is-selected { background: color-mix(in srgb, var(--mood-happy) 72%, transparent); color: #fff; }
+.reaction-button[data-value="neutral"]:hover, .reaction-button[data-value="neutral"]:focus-visible, .reaction-button[data-value="neutral"].is-selected { background: color-mix(in srgb, var(--mood-neutral) 72%, transparent); color: #fff; }
+.reaction-button[data-value="sad"]:hover, .reaction-button[data-value="sad"]:focus-visible, .reaction-button[data-value="sad"].is-selected { background: color-mix(in srgb, var(--mood-sad) 72%, transparent); color: #fff; }
 .reaction-button:focus-visible, .flip-button:focus-visible, .back-button:focus-visible, .touch-rate:focus-visible, .source-link:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
 .card-back h3 { flex: 0 0 auto; margin: 0 45px 8px 0; font-family: var(--serif); font-size: 14px; font-weight: 400; letter-spacing: -.02em; line-height: 1.08; overflow-wrap: break-word; }
@@ -204,10 +209,7 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
   .flip-button { border-radius: 0 0 10px; }
   .story-card:hover:not(.is-flipped) .card-rotator { filter: none; }
   .story-card .card-body, .story-card.size-small .card-body { padding-bottom: 57px; }
-  .story-card .card-meta { position: absolute; right: 53px; bottom: 22px; left: 95px; display: block; margin: 0; padding: 0; border: 0; text-align: center; }
-  .story-card .reaction-count, .story-card .mood-meter { display: none; }
-  .story-card .mood-word { display: block; padding: 0; font-size: 9px; text-align: center; }
-  .story-card.size-small .card-meta { display: none; }
+  .story-card .card-meta { display: none; }
   .story-card.size-small h2 { font-size: 14px; }
 }
 
