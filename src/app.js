@@ -204,21 +204,34 @@
     });
   }
 
-  function describeMoodBoundary(value, side) {
+  function describeMoodBoundary(value) {
     if (value === 0) return "Happiest";
     if (value === 50) return "Neutral";
     if (value === 100) return "Saddest";
-    const distance = side === "happy" ? value * 2 : (value - 50) * 2;
-    return `${Math.round(distance)}% from ${side === "happy" ? "Happy toward Neutral" : "Neutral toward Sad"}`;
+    if (value < 50) return `${Math.round(value * 2)}% from Happy toward Neutral`;
+    return `${Math.round((value - 50) * 2)}% from Neutral toward Sad`;
   }
 
-  function applyMoodFilter() {
-    state.moodMinPosition = clamp(Number(moodHappyFilter?.value || 0), 0, 50);
-    state.moodMaxPosition = clamp(Number(moodSadFilter?.value || 100), 50, 100);
-    moodHappyFilter?.setAttribute("aria-valuetext", describeMoodBoundary(state.moodMinPosition, "happy"));
-    moodSadFilter?.setAttribute("aria-valuetext", describeMoodBoundary(state.moodMaxPosition, "sad"));
-    document.documentElement.style.setProperty("--happy-filter-position", `${state.moodMinPosition * 2}%`);
-    document.documentElement.style.setProperty("--sad-filter-position", `${(state.moodMaxPosition - 50) * 2}%`);
+  function applyMoodFilter(changedBoundary = "both") {
+    let left = clamp(Number(moodHappyFilter?.value || 0), 0, 100);
+    let right = clamp(Number(moodSadFilter?.value || 100), 0, 100);
+    if (left > right && changedBoundary === "left") left = right;
+    if (right < left && changedBoundary === "right") right = left;
+    if (left > right) [left, right] = [right, left];
+    state.moodMinPosition = left;
+    state.moodMaxPosition = right;
+    if (moodHappyFilter) {
+      moodHappyFilter.value = String(left);
+      moodHappyFilter.max = String(right);
+      moodHappyFilter.setAttribute("aria-valuetext", describeMoodBoundary(left));
+    }
+    if (moodSadFilter) {
+      moodSadFilter.value = String(right);
+      moodSadFilter.min = String(left);
+      moodSadFilter.setAttribute("aria-valuetext", describeMoodBoundary(right));
+    }
+    document.documentElement.style.setProperty("--mood-filter-start", `${left}%`);
+    document.documentElement.style.setProperty("--mood-filter-end", `${right}%`);
     const shown = visibleStories().length;
     if (moodFilterStatus) moodFilterStatus.textContent = `Showing ${shown} of ${state.stories.length} stories in the selected mood range`;
     layoutCards();
@@ -667,8 +680,8 @@
 
   const dateFormatter = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
   document.querySelector("#date-stamp").textContent = dateFormatter.format(new Date()).toUpperCase();
-  moodHappyFilter?.addEventListener("input", applyMoodFilter);
-  moodSadFilter?.addEventListener("input", applyMoodFilter);
+  moodHappyFilter?.addEventListener("input", () => applyMoodFilter("left"));
+  moodSadFilter?.addEventListener("input", () => applyMoodFilter("right"));
   applyMoodFilter();
   mergeStories(SEED_STORIES, false);
   fetchNews(true);

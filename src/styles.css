@@ -73,15 +73,20 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .axis-swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--mood-neutral); }
 .axis-swatch.happy { background: var(--mood-happy); }
 .axis-swatch.sad { background: var(--mood-sad); }
-.mood-filter { position: absolute; right: clamp(8px, 1.15vw, 18px); bottom: 3px; left: clamp(8px, 1.15vw, 18px); display: grid; height: 18px; grid-template-columns: 1fr 1fr; align-items: center; }
-.mood-filter-range { width: 100%; height: 18px; margin: 0; padding: 0; appearance: none; background: transparent; cursor: ew-resize; }
-.mood-filter-range::-webkit-slider-runnable-track { height: 3px; border-radius: 0; }
-.mood-filter-range.happy-neutral::-webkit-slider-runnable-track { background: linear-gradient(90deg, rgba(156,168,184,.28) 0 var(--happy-filter-position, 0%), var(--mood-happy) var(--happy-filter-position, 0%), var(--mood-neutral) 100%); }
-.mood-filter-range.neutral-sad::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--mood-neutral) 0 var(--sad-filter-position, 100%), rgba(156,168,184,.28) var(--sad-filter-position, 100%) 100%); }
-.mood-filter-range::-moz-range-track { height: 3px; border: 0; border-radius: 0; background: linear-gradient(90deg, var(--mood-happy), var(--mood-neutral)); }
-.mood-filter-range.neutral-sad::-moz-range-track { background: linear-gradient(90deg, var(--mood-neutral), var(--mood-sad)); }
-.mood-filter-range::-webkit-slider-thumb { width: 7px; height: 17px; margin-top: -7px; border: 1px solid rgba(7,10,15,.75); border-radius: 1px; appearance: none; background: #f4f7fb; box-shadow: 0 1px 5px rgba(0,0,0,.7); }
-.mood-filter-range::-moz-range-thumb { width: 7px; height: 17px; border: 1px solid rgba(7,10,15,.75); border-radius: 1px; background: #f4f7fb; box-shadow: 0 1px 5px rgba(0,0,0,.7); }
+.mood-filter { position: absolute; right: clamp(8px, 1.15vw, 18px); bottom: 3px; left: clamp(8px, 1.15vw, 18px); height: 18px; }
+.mood-filter::before, .mood-filter::after { content: ""; position: absolute; right: 0; top: 50%; left: 0; height: 3px; pointer-events: none; transform: translateY(-50%); }
+.mood-filter::before { background: linear-gradient(90deg, var(--mood-happy), var(--mood-neutral) 50%, var(--mood-sad)); }
+.mood-filter::after { background: linear-gradient(90deg, rgba(7,10,15,.72) 0 var(--mood-filter-start, 0%), transparent var(--mood-filter-start, 0%) var(--mood-filter-end, 100%), rgba(7,10,15,.72) var(--mood-filter-end, 100%) 100%); }
+.mood-filter-range { position: absolute; inset: 0; z-index: 2; width: 100%; height: 18px; margin: 0; padding: 0; appearance: none; background: transparent; cursor: ew-resize; pointer-events: none; }
+.mood-filter-range.right-boundary { z-index: 3; }
+.mood-filter-range::-webkit-slider-runnable-track { height: 3px; border-radius: 0; background: transparent; }
+.mood-filter-range::-moz-range-track { height: 3px; border: 0; border-radius: 0; background: transparent; }
+.mood-filter-range::-webkit-slider-thumb { width: 13px; height: 18px; margin-top: -7.5px; border: 0; appearance: none; background: #f4f7fb; filter: drop-shadow(0 1px 3px rgba(0,0,0,.8)); pointer-events: auto; }
+.mood-filter-range.left-boundary::-webkit-slider-thumb { clip-path: polygon(0 0, 100% 50%, 0 100%); transform: translateX(-5px); }
+.mood-filter-range.right-boundary::-webkit-slider-thumb { clip-path: polygon(100% 0, 0 50%, 100% 100%); transform: translateX(5px); }
+.mood-filter-range::-moz-range-thumb { width: 13px; height: 18px; border: 0; border-radius: 0; background: #f4f7fb; filter: drop-shadow(0 1px 3px rgba(0,0,0,.8)); pointer-events: auto; }
+.mood-filter-range.left-boundary::-moz-range-thumb { clip-path: polygon(0 0, 100% 50%, 0 100%); transform: translateX(-5px); }
+.mood-filter-range.right-boundary::-moz-range-thumb { clip-path: polygon(100% 0, 0 50%, 100% 100%); transform: translateX(5px); }
 .mood-filter-range:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .map-body { position: relative; display: block; }
 .vertical-axis { position: absolute; inset: 9px auto 9px 6px; z-index: 4; display: flex; width: 18px; flex-direction: column; align-items: center; justify-content: space-between; color: rgba(244,247,251,.74); font-size: 8px; font-weight: 900; letter-spacing: .1em; pointer-events: none; writing-mode: vertical-rl; transform: rotate(180deg); }
