@@ -8,8 +8,8 @@
   <meta name="moodwire-api-base" content="https://moodwire-newsroom.danflurry.chatgpt.site">
   <title>Moodwire — The living news grid</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23101218'/%3E%3Cpath d='M14 42V30h9v12zm14 0V14h9v28zm14 0V23h9v19z' fill='%23d8ff3e'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./styles.css?v=11">
-  <script src="./app.js?v=11" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=12">
+  <script src="./app.js?v=12" defer></script>
 </head>
 <body>
   <main class="newsroom-shell" id="top">
@@ -22,7 +22,9 @@
       <div class="live-status" aria-live="polite">
         <span class="live-pulse" aria-hidden="true"></span>
         <strong id="feed-state">CONNECTING</strong>
-        <span class="reader-count"><b>30</b> simulated readers + you</span>
+        <span class="account-state" id="account-state">CHECKING ACCOUNT</span>
+        <a class="account-button" id="sign-in-link" href="/signin-with-chatgpt?return_to=/" target="_top" hidden>REGISTER / SIGN IN</a>
+        <button class="account-button profile-button" id="profile-button" type="button" hidden>PROFILE</button>
       </div>
     </header>
 
@@ -59,6 +61,39 @@
       <p id="refresh-time">Waiting for the first signal</p>
     </footer>
   </main>
+
+  <section class="auth-gate" id="auth-gate" aria-labelledby="auth-title" hidden>
+    <div class="auth-card">
+      <span class="auth-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <p class="auth-eyebrow">MOODWIRE MEMBERSHIP</p>
+      <h2 id="auth-title">Register to enter the live grid</h2>
+      <p>Your profile, reactions, and story interactions will be stored securely so the map reflects real people—not simulated readers.</p>
+      <a class="primary-account-button" id="gate-sign-in-link" href="/signin-with-chatgpt?return_to=/" target="_top">Register or sign in with ChatGPT</a>
+      <p class="auth-note">Moodwire never receives or stores your ChatGPT password.</p>
+    </div>
+  </section>
+
+  <dialog class="profile-dialog" id="profile-dialog" aria-labelledby="profile-title">
+    <form class="profile-form" id="profile-form" method="dialog">
+      <div class="profile-heading">
+        <div>
+          <p class="auth-eyebrow">YOUR MOODWIRE PROFILE</p>
+          <h2 id="profile-title">Account</h2>
+        </div>
+        <button class="dialog-close" type="button" id="profile-close" aria-label="Close profile">×</button>
+      </div>
+      <label for="profile-name">Display name</label>
+      <input id="profile-name" name="displayName" type="text" minlength="2" maxlength="40" autocomplete="name" required>
+      <label for="profile-email">Email</label>
+      <input id="profile-email" type="email" readonly>
+      <p class="profile-stats" id="profile-stats"></p>
+      <p class="form-status" id="profile-status" role="status"></p>
+      <div class="profile-actions">
+        <a class="secondary-account-button" id="sign-out-link" href="/signout-with-chatgpt?return_to=/" target="_top">Sign out</a>
+        <button class="primary-account-button" type="submit">Save profile</button>
+      </div>
+    </form>
+  </dialog>
 
   <output class="toast" id="toast" aria-live="polite" aria-atomic="true"></output>
   <noscript><p class="noscript">Moodwire needs JavaScript to keep the news grid moving without a refresh.</p></noscript>

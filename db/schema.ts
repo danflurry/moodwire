@@ -6,6 +6,15 @@ export const feedCache = sqliteTable("feed_cache", {
   refreshedAt: integer("refreshed_at").notNull(),
 });
 
+export const userProfiles = sqliteTable("user_profiles", {
+  userId: text("user_id").primaryKey(),
+  email: text("email"),
+  displayName: text("display_name").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+  lastSeenAt: integer("last_seen_at").notNull(),
+});
+
 export const votes = sqliteTable("votes", {
   storyId: text("story_id").notNull(),
   actorId: text("actor_id").notNull(),

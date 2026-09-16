@@ -34,6 +34,7 @@ body {
 
 button, a { color: inherit; font: inherit; }
 button { border: 0; }
+input { color: inherit; font: inherit; }
 a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; margin: -1px; padding: 0; border: 0; clip: rect(0 0 0 0); white-space: nowrap; }
 .newsroom-shell { min-height: 100dvh; padding: 0; }
@@ -61,8 +62,43 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .live-status { justify-self: end; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .live-status strong { color: var(--text); font-size: 10px; letter-spacing: .1em; }
 .live-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--mood-happy); box-shadow: 0 0 0 4px rgba(53, 208, 127, .11); animation: pulse 1.8s ease infinite; }
-.reader-count { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
-.reader-count b { display: inline-grid; min-width: 25px; height: 25px; place-items: center; border: 1px solid var(--line); border-radius: 99px; background: var(--surface-raised); color: var(--text); font-size: 10px; }
+.account-state { margin-left: 6px; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.account-button, .primary-account-button, .secondary-account-button { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 6px; font-weight: 900; letter-spacing: .08em; text-decoration: none; text-transform: uppercase; cursor: pointer; }
+.account-button { min-height: 28px; padding: 0 10px; background: var(--surface-raised); color: var(--text); font-size: 9px; }
+.account-button:hover, .account-button:focus-visible { border-color: var(--mood-neutral); background: #1b2a3d; }
+.profile-button { max-width: min(26vw, 190px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.auth-gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 22px; background: rgba(4,7,11,.82); backdrop-filter: blur(14px) saturate(.8); }
+.auth-gate[hidden] { display: none; }
+.auth-card { width: min(470px, 100%); padding: clamp(25px, 5vw, 42px); border: 1px solid var(--line); border-radius: 18px; background: #0b111a; box-shadow: 0 28px 90px rgba(0,0,0,.72); text-align: center; }
+.auth-mark { display: flex; width: 54px; height: 47px; align-items: flex-end; gap: 4px; margin: 0 auto 20px; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: #080c12; }
+.auth-mark i { flex: 1; }
+.auth-mark i:nth-child(1) { height: 48%; background: var(--mood-happy); }
+.auth-mark i:nth-child(2) { height: 100%; background: var(--mood-neutral); }
+.auth-mark i:nth-child(3) { height: 69%; background: var(--mood-sad); }
+.auth-eyebrow { margin: 0 0 8px; color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
+.auth-card h2, .profile-heading h2 { margin: 0; font-family: var(--serif); font-size: clamp(28px, 5vw, 42px); font-weight: 400; letter-spacing: -.035em; line-height: 1; }
+.auth-card > p:not(.auth-eyebrow, .auth-note) { margin: 18px auto 22px; color: #c2ccd9; font-size: 15px; line-height: 1.5; }
+.primary-account-button, .secondary-account-button { min-height: 43px; padding: 0 16px; font-size: 11px; }
+.primary-account-button { background: var(--mood-neutral); color: #06101d; }
+.primary-account-button:hover, .primary-account-button:focus-visible { background: #70a7ff; }
+.secondary-account-button { background: transparent; color: var(--text); }
+.secondary-account-button:hover, .secondary-account-button:focus-visible { border-color: var(--mood-sad); }
+.auth-note { margin: 14px 0 0; color: var(--muted); font-size: 11px; }
+
+.profile-dialog { width: min(520px, calc(100vw - 28px)); padding: 0; border: 1px solid var(--line); border-radius: 16px; color: var(--text); background: #0b111a; box-shadow: 0 24px 80px rgba(0,0,0,.75); }
+.profile-dialog::backdrop { background: rgba(4,7,11,.72); backdrop-filter: blur(8px); }
+.profile-form { display: grid; gap: 10px; padding: 25px; }
+.profile-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
+.profile-heading h2 { font-size: 34px; }
+.dialog-close { width: 34px; height: 34px; border-radius: 6px; background: var(--surface-raised); color: var(--text); font-size: 25px; line-height: 1; cursor: pointer; }
+.profile-form label { margin-top: 5px; color: var(--muted); font-size: 11px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+.profile-form input { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; background: #080c12; font-size: 15px; outline: none; }
+.profile-form input:focus { border-color: var(--mood-neutral); box-shadow: 0 0 0 3px rgba(67,136,245,.15); }
+.profile-form input[readonly] { color: var(--muted); }
+.profile-stats, .form-status { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+.form-status { min-height: 18px; color: #bcd3f7; }
+.profile-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 10px; }
 
 .map { position: relative; }
 .axis-row { position: relative; min-height: 45px; padding: 7px clamp(8px, 1.15vw, 18px) 6px; color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .14em; }
@@ -218,8 +254,8 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
   .topbar { min-height: 46px; }
   .brand { font-size: 12px; }
   .brand-mark { width: 23px; height: 20px; }
-  .reader-count { font-size: 0; }
-  .reader-count b { min-width: 23px; height: 23px; font-size: 9px; }
+  .account-state { display: none; }
+  .account-button { min-height: 26px; padding-inline: 8px; }
   .axis-row { padding-inline: 7px; }
   .mood-filter { right: 7px; left: 7px; }
   .axis-row .axis-swatch { display: none; }
@@ -232,6 +268,8 @@ a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
   .story-card .card-body, .story-card.size-small .card-body { padding-bottom: 57px; }
   .story-card .card-meta { display: none; }
   .story-card.size-small h2 { font-size: 14px; }
+  .profile-actions { align-items: stretch; flex-direction: column-reverse; }
+  .profile-actions > * { width: 100%; }
 }
 
 @media (hover: none), (pointer: coarse) {

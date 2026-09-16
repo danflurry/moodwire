@@ -12,8 +12,21 @@
   const moodSadFilter = document.querySelector("#mood-filter-sad");
   const moodFilterStatus = document.querySelector("#mood-filter-status");
   const filterEmpty = document.querySelector("#filter-empty");
+  const accountState = document.querySelector("#account-state");
+  const signInLink = document.querySelector("#sign-in-link");
+  const gateSignInLink = document.querySelector("#gate-sign-in-link");
+  const authGate = document.querySelector("#auth-gate");
+  const profileButton = document.querySelector("#profile-button");
+  const profileDialog = document.querySelector("#profile-dialog");
+  const profileForm = document.querySelector("#profile-form");
+  const profileName = document.querySelector("#profile-name");
+  const profileEmail = document.querySelector("#profile-email");
+  const profileStats = document.querySelector("#profile-stats");
+  const profileStatus = document.querySelector("#profile-status");
+  const profileClose = document.querySelector("#profile-close");
+  const signOutLink = document.querySelector("#sign-out-link");
   const API_BASE = (document.querySelector('meta[name="moodwire-api-base"]')?.content || "").trim().replace(/\/+$/, "");
-  const VISITOR_ID = readVisitorId();
+  const APP_ORIGIN = API_BASE || window.location.origin;
 
   const ICONS = {
     flip: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8.2A7.5 7.5 0 0 1 19.7 12M4.3 12A7.5 7.5 0 0 0 17.9 15.8"/></svg>',
@@ -59,8 +72,7 @@
     stories: [],
     elements: new Map(),
     placements: new Map(),
-    humanVotes: readStoredVotes(),
-    tick: 0,
+    humanVotes: {},
     toastTimer: 0,
     resizeTimer: 0,
     live: false,
@@ -68,6 +80,8 @@
     moodMaxPosition: Number(moodSadFilter?.value || 100),
     voteQueues: new Map(),
     voteVersions: new Map(),
+    authenticated: false,
+    profile: null,
   };
 
   function hash(value) {
@@ -81,27 +95,14 @@
 
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 
-  function readVisitorId() {
-    const fallback = () => {
-      const bytes = crypto.getRandomValues(new Uint8Array(16));
-      return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    };
-    try {
-      const stored = localStorage.getItem("moodwire-visitor");
-      if (stored && /^[a-z0-9_-]{16,128}$/i.test(stored)) return stored;
-      const created = crypto.randomUUID?.() || fallback();
-      localStorage.setItem("moodwire-visitor", created);
-      return created;
-    } catch { return fallback(); }
-  }
-
   function apiUrl(path) { return API_BASE ? `${API_BASE}${path}` : `.${path}`; }
 
   function apiFetch(path, options = {}) {
     const headers = new Headers(options.headers || {});
-    headers.set("x-moodwire-visitor", VISITOR_ID);
-    return fetch(apiUrl(path), { ...options, headers });
+    return fetch(apiUrl(path), { credentials: "include", ...options, headers });
   }
+
+  function accountUrl(path) { return new URL(path, `${APP_ORIGIN}/`).href; }
 
   function mixRgb(left, right, amount) {
     return left.map((channel, index) => Math.round(channel + (right[index] - channel) * amount));
@@ -119,29 +120,6 @@
     };
   }
 
-  function readStoredVotes() {
-    try { return JSON.parse(localStorage.getItem("moodwire-votes") || "{}"); }
-    catch { return {}; }
-  }
-
-  function sentimentCue(headline) {
-    const text = headline.toLowerCase();
-    const positive = ["rise", "gain", "agree", "agreement", "rescue", "recover", "finds", "promising", "celebrate", "return", "peace", "breakthrough", "expand", "cool"];
-    const negative = ["storm", "war", "attack", "death", "crisis", "fire", "warning", "collapse", "fear", "loss", "threat", "heat", "pressure"];
-    return positive.reduce((sum, word) => sum + (text.includes(word) ? 1 : 0), 0) - negative.reduce((sum, word) => sum + (text.includes(word) ? 1 : 0), 0);
-  }
-
-  function simulatedChoice(actor, story, salt = 0) {
-    const cue = sentimentCue(story.headline);
-    const personality = (hash(`actor-${actor}`) % 31) - 15;
-    const roll = hash(`${story.id}:${actor}:${salt}`) % 100;
-    const happyCutoff = clamp(32 + cue * 7 + personality * .35, 12, 62);
-    const sadCutoff = clamp(70 + cue * 4 + personality * .15, 43, 88);
-    if (roll < happyCutoff) return "happy";
-    if (roll < sadCutoff) return "neutral";
-    return "sad";
-  }
-
   function normalizeStory(raw, index, isLive) {
     const userVote = ["happy", "neutral", "sad"].includes(raw.userVote) ? raw.userVote : null;
     const story = {
@@ -155,30 +133,19 @@
         sad: Number(raw.ratings?.sad || 0),
       },
       serverInteractions: Number(raw.interactions || 0),
-      simVotes: { happy: 0, neutral: 0, sad: 0 },
-      agentVotes: new Map(),
-      interactions: 0,
+      interactions: Number(raw.interactions || 0),
       isLive,
       humanApplied: Boolean(userVote),
     };
     if (userVote) state.humanVotes[story.id] = userVote;
-    for (let actor = 0; actor < 30; actor += 1) {
-      const participation = hash(`${story.id}:seen:${actor}`) % 100;
-      const threshold = clamp(44 + (9 - index) * 3, 30, 82);
-      if (participation > threshold) continue;
-      const choice = simulatedChoice(actor, story);
-      story.agentVotes.set(actor, choice);
-      story.simVotes[choice] += 1;
-    }
-    story.interactions = story.serverInteractions + story.agentVotes.size + story.sources.length * 3 + (hash(story.id) % 24);
     return story;
   }
 
   function totals(story) {
     const result = {
-      happy: story.community.happy + story.simVotes.happy,
-      neutral: story.community.neutral + story.simVotes.neutral,
-      sad: story.community.sad + story.simVotes.sad,
+      happy: story.community.happy,
+      neutral: story.community.neutral,
+      sad: story.community.sad,
     };
     if (!story.humanApplied && state.humanVotes[story.id]) result[state.humanVotes[story.id]] += 1;
     return result;
@@ -510,8 +477,6 @@
       const normalized = normalizeStory(raw, index, isLive);
       const old = oldById.get(normalized.id);
       if (!old) return normalized;
-      normalized.simVotes = old.simVotes;
-      normalized.agentVotes = old.agentVotes;
       normalized.interactions = Math.max(old.interactions, normalized.interactions);
       normalized.humanApplied = normalized.humanApplied || old.humanApplied;
       return normalized;
@@ -527,7 +492,54 @@
     state.toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 2400);
   }
 
+  function showRegistration() {
+    state.authenticated = false;
+    state.profile = null;
+    authGate.hidden = false;
+    signInLink.hidden = false;
+    profileButton.hidden = true;
+    accountState.textContent = "REGISTRATION REQUIRED";
+    feedState.textContent = "SIGN IN REQUIRED";
+  }
+
+  function renderProfile(profile) {
+    state.authenticated = true;
+    state.profile = profile;
+    authGate.hidden = true;
+    signInLink.hidden = true;
+    profileButton.hidden = false;
+    profileButton.textContent = profile.displayName || "PROFILE";
+    accountState.textContent = "SIGNED IN";
+    profileName.value = profile.displayName || "";
+    profileEmail.value = profile.email || "Email unavailable";
+    const votes = Number(profile.voteCount || 0);
+    const interactions = Number(profile.interactionCount || 0);
+    profileStats.textContent = `${votes} ${votes === 1 ? "reaction" : "reactions"} · ${interactions} tracked ${interactions === 1 ? "interaction" : "interactions"}`;
+  }
+
+  async function loadSession() {
+    try {
+      const response = await apiFetch("/api/session", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.authenticated || !data.profile) {
+        showRegistration();
+        return false;
+      }
+      renderProfile(data.profile);
+      return true;
+    } catch {
+      showRegistration();
+      accountState.textContent = "ACCOUNT UNAVAILABLE";
+      return false;
+    }
+  }
+
   async function rateStory(storyId, value, fromTool = false) {
+    if (!state.authenticated) {
+      showRegistration();
+      if (fromTool) throw new Error("Sign in is required before rating a story");
+      return { persisted: false, error: "Authentication required" };
+    }
     const story = state.stories.find((item) => item.id === storyId);
     if (!story || !["happy", "neutral", "sad"].includes(value)) throw new Error("Unknown story or reaction");
     const previousVote = state.humanVotes[storyId] || null;
@@ -535,7 +547,6 @@
     const version = (state.voteVersions.get(storyId) || 0) + 1;
     state.voteVersions.set(storyId, version);
     state.humanVotes[storyId] = value;
-    try { localStorage.setItem("moodwire-votes", JSON.stringify(state.humanVotes)); } catch {}
     story.interactions += 1;
     const card = state.elements.get(storyId);
     card?.classList.remove("rating-open");
@@ -545,7 +556,7 @@
     layoutCards();
     if (!fromTool) showToast("The map is adjusting while your reaction saves…");
     if (!story.isLive) {
-      if (!fromTool) showToast(`You marked this story ${value}. Saved on this device.`);
+      if (!fromTool) showToast("Live reactions are temporarily unavailable.");
       return { storyId, emotion: value, mood: moodFor(story).label, persisted: false };
     }
     const saveReaction = async () => {
@@ -576,7 +587,6 @@
         if (previousVote) state.humanVotes[storyId] = previousVote;
         else delete state.humanVotes[storyId];
         story.interactions = previousInteractions;
-        try { localStorage.setItem("moodwire-votes", JSON.stringify(state.humanVotes)); } catch {}
         updateCard(story);
         layoutCards();
         throw new Error(error instanceof Error ? error.message : "Reaction could not be saved");
@@ -589,6 +599,7 @@
   }
 
   function postInteraction(storyId, kind) {
+    if (!state.authenticated) return;
     const story = state.stories.find((item) => item.id === storyId);
     if (story) {
       story.interactions += 1;
@@ -604,23 +615,6 @@
     }).catch(() => {});
   }
 
-  function simulationStep() {
-    if (!state.stories.length || document.hidden) return;
-    const actor = state.tick % 30;
-    const story = state.stories[hash(`tick:${state.tick}:actor:${actor}`) % state.stories.length];
-    const previous = story.agentVotes.get(actor);
-    const next = simulatedChoice(actor, story, Math.floor(state.tick / 30) + 1);
-    if (previous && previous !== next) story.simVotes[previous] = Math.max(0, story.simVotes[previous] - 1);
-    if (previous !== next) {
-      story.agentVotes.set(actor, next);
-      story.simVotes[next] += 1;
-    }
-    story.interactions += 1;
-    state.tick += 1;
-    updateCard(story);
-    layoutCards();
-  }
-
   function relativeTime(timestamp) {
     const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
     if (seconds < 8) return "Updated just now";
@@ -632,6 +626,10 @@
   async function fetchNews(initial = false) {
     try {
       const response = await apiFetch("/api/news", { cache: "no-store" });
+      if (response.status === 401) {
+        showRegistration();
+        return;
+      }
       if (!response.ok) throw new Error("Feed unavailable");
       const data = await response.json();
       if (!Array.isArray(data.stories) || !data.stories.length) throw new Error("No stories");
@@ -728,14 +726,59 @@
 
   const dateFormatter = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
   document.querySelector("#date-stamp").textContent = dateFormatter.format(new Date()).toUpperCase();
+  const signInPath = accountUrl("/signin-with-chatgpt?return_to=/");
+  const signOutPath = accountUrl("/signout-with-chatgpt?return_to=/");
+  signInLink.href = signInPath;
+  gateSignInLink.href = signInPath;
+  signOutLink.href = signOutPath;
+  profileButton.addEventListener("click", () => {
+    if (!state.profile) return;
+    renderProfile(state.profile);
+    profileStatus.textContent = "";
+    profileDialog.showModal();
+  });
+  profileClose.addEventListener("click", () => profileDialog.close());
+  profileDialog.addEventListener("click", (event) => {
+    if (event.target === profileDialog) profileDialog.close();
+  });
+  profileForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const displayName = profileName.value.trim();
+    if (displayName.length < 2 || displayName.length > 40) {
+      profileStatus.textContent = "Use a display name between 2 and 40 characters.";
+      return;
+    }
+    profileStatus.textContent = "Saving…";
+    try {
+      const response = await apiFetch("/api/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ displayName }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        profileDialog.close();
+        showRegistration();
+        return;
+      }
+      if (!response.ok || !data.profile) throw new Error(data.error || "Profile could not be saved");
+      renderProfile(data.profile);
+      profileStatus.textContent = "Profile saved.";
+    } catch (error) {
+      profileStatus.textContent = error instanceof Error ? error.message : "Profile could not be saved";
+    }
+  });
   moodHappyFilter?.addEventListener("input", () => applyMoodFilter("left"));
   moodSadFilter?.addEventListener("input", () => applyMoodFilter("right"));
   applyMoodFilter();
   mergeStories(SEED_STORIES, false);
-  fetchNews(true);
   registerWebMcp();
-  setInterval(simulationStep, 2400);
-  setInterval(() => fetchNews(false), 60_000);
+  loadSession().then((authenticated) => {
+    if (authenticated) fetchNews(true);
+  });
+  setInterval(() => {
+    if (state.authenticated) fetchNews(false);
+  }, 15_000);
   setInterval(() => {
     const timestamp = Number(refreshTime.dataset.timestamp);
     if (timestamp) refreshTime.textContent = relativeTime(timestamp);

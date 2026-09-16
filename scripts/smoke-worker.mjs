@@ -6,6 +6,12 @@ globalThis.fetch = async () => new Response("Feed unavailable", { status: 503 })
 const moduleUrl = pathToFileURL(resolve(import.meta.dirname, "../dist/server/index.js"));
 const { default: worker } = await import(`${moduleUrl.href}?smoke=${Date.now()}`);
 const context = { waitUntil() {} };
+const authHeaders = {
+  "oai-authenticated-user-id": "smoke-user",
+  "oai-authenticated-user-email": "smoke@example.com",
+  "oai-authenticated-user-full-name": "Smoke%20Tester",
+  "oai-authenticated-user-full-name-encoding": "percent-encoded-utf-8",
+};
 
 const page = await worker.fetch(new Request("https://moodwire.test/"), {}, context);
 assert.equal(page.status, 200);
@@ -18,6 +24,8 @@ assert.match(pageText, /id="mood-filter-sad"/);
 assert.match(pageText, /id="mood-filter-happy"[^>]+min="0" max="100"/);
 assert.match(pageText, /id="mood-filter-sad"[^>]+min="0" max="100"/);
 assert.match(pageText, /Filter stories by aggregate mood/);
+assert.match(pageText, /Register or sign in with ChatGPT/);
+assert.doesNotMatch(pageText, /30<\/b> simulated readers/);
 
 const script = await worker.fetch(new Request("https://moodwire.test/app.js"), {}, context);
 assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
@@ -45,6 +53,9 @@ assert.doesNotMatch(scriptText, /class="back-kicker"/);
 assert.doesNotMatch(scriptText, /class="mood-word"/);
 assert.doesNotMatch(scriptText, /ICONS\.(?:happy|neutral|sad)/);
 assert.doesNotMatch(scriptText, /label: "(?:hopeful|concerned|uplifted|heavy|balanced)"/);
+assert.doesNotMatch(scriptText, /simulationStep|simulatedChoice|agentVotes|simVotes|moodwire-visitor/);
+assert.match(scriptText, /\/api\/session/);
+assert.match(scriptText, /\/api\/profile/);
 
 const stylesheet = await worker.fetch(new Request("https://moodwire.test/styles.css"), {}, context);
 const stylesheetText = await stylesheet.text();
@@ -74,7 +85,9 @@ assert.doesNotMatch(stylesheetText, /@media \(hover: none\), \(pointer: coarse\)
 assert.match(stylesheetText, /\.map-body[^\n]*display: block/);
 assert.doesNotMatch(stylesheetText, /\.flip-button[^\n]*transform:/);
 
-const news = await worker.fetch(new Request("https://moodwire.test/api/news"), {}, context);
+const anonymousNews = await worker.fetch(new Request("https://moodwire.test/api/news"), {}, context);
+assert.equal(anonymousNews.status, 401);
+const news = await worker.fetch(new Request("https://moodwire.test/api/news", { headers: authHeaders }), {}, context);
 const payload = await news.json();
 assert.equal(payload.mode, "demo");
 assert.ok(payload.stories.length >= 4);
@@ -82,7 +95,7 @@ assert.ok(payload.stories.length >= 4);
 const sampleFeed = `<?xml version="1.0"?><rss><channel><item><title>Coastal cities prepare as powerful storm changes course</title><link>https://example.com/storm</link><pubDate>${new Date().toUTCString()}</pubDate></item><item><title>Researchers announce promising battery material breakthrough</title><link>https://example.com/battery</link><pubDate>${new Date().toUTCString()}</pubDate></item></channel></rss>`;
 globalThis.fetch = async () => new Response(sampleFeed, { status: 200, headers: { "content-type": "application/rss+xml" } });
 const { default: liveWorker } = await import(`${moduleUrl.href}?smoke-live=${Date.now()}`);
-const liveNews = await liveWorker.fetch(new Request("https://moodwire.test/api/news"), {}, context);
+const liveNews = await liveWorker.fetch(new Request("https://moodwire.test/api/news", { headers: authHeaders }), {}, context);
 const livePayload = await liveNews.json();
 assert.equal(livePayload.mode, "live");
 assert.equal(livePayload.activeSources, 20);
@@ -103,7 +116,7 @@ globalThis.fetch = async (url) => {
   return new Response(feed, { status: 200, headers: { "content-type": "application/rss+xml" } });
 };
 const { default: clusteringWorker } = await import(`${moduleUrl.href}?smoke-clustering=${Date.now()}`);
-const clusteredNews = await clusteringWorker.fetch(new Request("https://moodwire.test/api/news"), {}, context);
+const clusteredNews = await clusteringWorker.fetch(new Request("https://moodwire.test/api/news", { headers: authHeaders }), {}, context);
 const clusteredPayload = await clusteredNews.json();
 assert.equal(clusteredPayload.mode, "live");
 assert.equal(clusteredPayload.activeSources, clusteringTitles.size);
@@ -113,13 +126,14 @@ assert.ok(clusteredPayload.stories.some((story) => /weapons in space/i.test(stor
 
 const localVote = await liveWorker.fetch(new Request("https://moodwire.test/api/vote", {
   method: "POST",
-  headers: { "content-type": "application/json" },
+  headers: { "content-type": "application/json", ...authHeaders },
   body: JSON.stringify({ storyId: livePayload.stories[0].id, emotion: "happy" }),
 }), {}, context);
 assert.equal(localVote.status, 200);
 assert.equal((await localVote.json()).persisted, false);
 
 const storedVotes = new Map();
+const storedProfiles = new Map();
 const globalRateCounts = new Map();
 const fakeDb = {
   prepare(sql) {
@@ -134,9 +148,21 @@ const fakeDb = {
               return { requestCount: count };
             }
             if (sql.includes("SELECT payload")) return { payload: JSON.stringify(livePayload), refreshedAt: livePayload.refreshedAt };
+            if (sql.includes("SELECT email, display_name")) return storedProfiles.get(args[0]) || null;
+            if (sql.includes("COUNT(*) AS count FROM votes")) {
+              return { count: [...storedVotes].filter(([key]) => key.endsWith(`:${args[0]}`)).length };
+            }
+            if (sql.includes("SUM(count)") && sql.includes("FROM interactions WHERE actor_id")) return { count: 0 };
             return null;
           },
           async run() {
+            if (sql.includes("INSERT INTO user_profiles")) {
+              if (!storedProfiles.has(args[0])) storedProfiles.set(args[0], { email: args[1], displayName: args[2], createdAt: args[3] });
+            }
+            if (sql.includes("UPDATE user_profiles SET display_name")) {
+              const profile = storedProfiles.get(args[3]);
+              if (profile) storedProfiles.set(args[3], { ...profile, displayName: args[0] });
+            }
             if (sql.includes("INSERT INTO votes")) storedVotes.set(`${args[0]}:${args[1]}`, args[2]);
             return { success: true };
           },
@@ -166,10 +192,11 @@ const unauthenticated = await liveWorker.fetch(voteRequest(knownStoryId), dbEnv,
 assert.equal(unauthenticated.status, 401);
 const preflight = await liveWorker.fetch(new Request("https://moodwire.test/api/vote", {
   method: "OPTIONS",
-  headers: { origin: pagesOrigin, "access-control-request-method": "POST", "access-control-request-headers": "content-type,x-moodwire-visitor" },
+  headers: { origin: pagesOrigin, "access-control-request-method": "POST", "access-control-request-headers": "content-type" },
 }), dbEnv, context);
 assert.equal(preflight.status, 204);
 assert.equal(preflight.headers.get("access-control-allow-origin"), pagesOrigin);
+assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
 const deniedPreflight = await liveWorker.fetch(new Request("https://moodwire.test/api/vote", {
   method: "OPTIONS",
   headers: { origin: "https://example.com" },
@@ -184,9 +211,20 @@ const savedVote = await liveWorker.fetch(voteRequest(knownStoryId, { "oai-authen
 assert.equal(savedVote.status, 200);
 assert.equal((await savedVote.json()).persisted, true);
 const anonymousVote = await liveWorker.fetch(voteRequest(knownStoryId, { origin: pagesOrigin, "x-moodwire-visitor": "anonymous-smoke-reviewer" }, { storyId: knownStoryId, emotion: "neutral" }), dbEnv, context);
-assert.equal(anonymousVote.status, 200);
+assert.equal(anonymousVote.status, 401);
 assert.equal(anonymousVote.headers.get("access-control-allow-origin"), pagesOrigin);
-assert.equal((await anonymousVote.json()).persisted, true);
+assert.equal((await anonymousVote.json()).error, "Registration required");
+
+const session = await liveWorker.fetch(new Request("https://moodwire.test/api/session", { headers: authHeaders }), dbEnv, context);
+assert.equal(session.status, 200);
+assert.equal((await session.json()).profile.displayName, "Smoke Tester");
+const profileUpdate = await liveWorker.fetch(new Request("https://moodwire.test/api/profile", {
+  method: "POST",
+  headers: { "content-type": "application/json", ...authHeaders },
+  body: JSON.stringify({ displayName: "News Reader" }),
+}), dbEnv, context);
+assert.equal(profileUpdate.status, 200);
+assert.equal((await profileUpdate.json()).profile.displayName, "News Reader");
 
 let throttled = false;
 for (let index = 0; index < 20; index += 1) {
@@ -203,4 +241,4 @@ for (let index = 0; index < 61; index += 1) {
 }
 assert.equal(globalThrottleStatus, 429);
 
-console.log(`Smoke test passed: fallback, 20-feed aggregation, assets, CORS, authenticated and anonymous voting, validation, and throttling.`);
+console.log(`Smoke test passed: registration gate, profiles, real-user-only voting, aggregation, CORS, validation, and throttling.`);

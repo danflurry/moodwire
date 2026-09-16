@@ -74,7 +74,8 @@ function withCors(response, request) {
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", origin);
   headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
-  headers.set("access-control-allow-headers", "Content-Type, X-Moodwire-Visitor");
+  headers.set("access-control-allow-headers", "Content-Type");
+  headers.set("access-control-allow-credentials", "true");
   headers.set("access-control-max-age", "86400");
   headers.append("vary", "Origin");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
@@ -204,13 +205,12 @@ function clusterEntries(entries) {
     const headline = chooseConsensus(members);
     const terms = [...titleTokens(headline)].sort().slice(0, 10).join("-") || members[0].link;
     const publishedAt = Math.max(...members.map((member) => member.publishedAt));
-    const ageHours = Math.max(0, (Date.now() - publishedAt) / 3_600_000);
     return {
       id: `story-${hashId(terms)}`,
       headline,
       publishedAt,
       sources: members.slice(0, 16).map((member) => ({ name: member.source.name, url: member.link, domain: member.source.domain, publishedAt: member.publishedAt })),
-      interactions: Math.round(members.length * 4 + Math.max(0, 24 - ageHours)),
+      interactions: 0,
     };
   }).sort((a, b) => {
     const multiA = a.sources.length > 1 ? 1 : 0;
@@ -371,16 +371,36 @@ async function snapshotForRequest(env, ctx) {
   return await refreshFeeds(env);
 }
 
-async function visitorId(request) {
-  const authenticatedId = request.headers.get("oai-authenticated-user-id");
-  const anonymousId = request.headers.get("x-moodwire-visitor");
-  const identity = authenticatedId
-    ? `member:${authenticatedId}`
-    : anonymousId && /^[a-z0-9_-]{16,128}$/i.test(anonymousId) ? `guest:${anonymousId}` : null;
-  if (!identity) return null;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
-  const prefix = authenticatedId ? "member" : "guest";
-  return `${prefix}-${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+async function authenticatedUser(request) {
+  const authenticatedId = request.headers.get("oai-authenticated-user-id")?.trim();
+  if (!authenticatedId) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`member:${authenticatedId}`));
+  const actorId = `member-${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  const rawEmail = request.headers.get("oai-authenticated-user-email")?.trim() || "";
+  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail.slice(0, 254) : null;
+  let fullName = "";
+  if (request.headers.get("oai-authenticated-user-full-name-encoding") === "percent-encoded-utf-8") {
+    try { fullName = decodeURIComponent(request.headers.get("oai-authenticated-user-full-name") || "").trim(); }
+    catch { fullName = ""; }
+  }
+  const displayName = (fullName || email?.split("@")[0] || "Moodwire member").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 40);
+  return { actorId, email, displayName };
+}
+
+async function loadProfile(env, user) {
+  const now = Date.now();
+  if (!env?.DB) return { displayName: user.displayName, email: user.email, createdAt: now, voteCount: 0, interactionCount: 0 };
+  await env.DB.prepare("INSERT INTO user_profiles (user_id, email, display_name, created_at, updated_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET email = excluded.email, last_seen_at = excluded.last_seen_at").bind(user.actorId, user.email, user.displayName, now, now, now).run();
+  const profile = await env.DB.prepare("SELECT email, display_name AS displayName, created_at AS createdAt FROM user_profiles WHERE user_id = ?").bind(user.actorId).first();
+  const votes = await env.DB.prepare("SELECT COUNT(*) AS count FROM votes WHERE actor_id = ?").bind(user.actorId).first();
+  const interactions = await env.DB.prepare("SELECT COALESCE(SUM(count), 0) AS count FROM interactions WHERE actor_id = ?").bind(user.actorId).first();
+  return {
+    displayName: String(profile?.displayName || user.displayName),
+    email: profile?.email || user.email,
+    createdAt: Number(profile?.createdAt || now),
+    voteCount: Number(votes?.count || 0),
+    interactionCount: Number(interactions?.count || 0),
+  };
 }
 
 async function storyIsKnown(env, storyId) {
@@ -409,7 +429,7 @@ async function allowMutation(env, actor) {
   }
 }
 
-async function attachCommunityStats(env, request, stories) {
+async function attachCommunityStats(env, actor, stories) {
   if (!env?.DB || !stories.length) return stories;
   const ids = stories.map((story) => story.id);
   const placeholders = ids.map(() => "?").join(",");
@@ -417,15 +437,14 @@ async function attachCommunityStats(env, request, stories) {
   const interactionCounts = new Map();
   let userVotes = new Map();
   try {
-    const ratingRows = await env.DB.prepare(`SELECT story_id AS storyId, emotion, COUNT(*) AS count FROM votes WHERE story_id IN (${placeholders}) GROUP BY story_id, emotion`).bind(...ids).all();
+    const ratingRows = await env.DB.prepare(`SELECT v.story_id AS storyId, v.emotion, COUNT(*) AS count FROM votes v INNER JOIN user_profiles p ON p.user_id = v.actor_id WHERE v.story_id IN (${placeholders}) GROUP BY v.story_id, v.emotion`).bind(...ids).all();
     for (const row of ratingRows.results || []) {
       const current = ratings.get(row.storyId) || { happy: 0, neutral: 0, sad: 0 };
       current[row.emotion] = Number(row.count || 0);
       ratings.set(row.storyId, current);
     }
-    const interactionRows = await env.DB.prepare(`SELECT story_id AS storyId, SUM(count) AS count FROM interactions WHERE story_id IN (${placeholders}) GROUP BY story_id`).bind(...ids).all();
+    const interactionRows = await env.DB.prepare(`SELECT i.story_id AS storyId, SUM(i.count) AS count FROM interactions i INNER JOIN user_profiles p ON p.user_id = i.actor_id WHERE i.story_id IN (${placeholders}) GROUP BY i.story_id`).bind(...ids).all();
     for (const row of interactionRows.results || []) interactionCounts.set(row.storyId, Number(row.count || 0));
-    const actor = await visitorId(request);
     if (actor) {
       const voteRows = await env.DB.prepare(`SELECT story_id AS storyId, emotion FROM votes WHERE actor_id = ? AND story_id IN (${placeholders})`).bind(actor, ...ids).all();
       userVotes = new Map((voteRows.results || []).map((row) => [row.storyId, row.emotion]));
@@ -435,9 +454,36 @@ async function attachCommunityStats(env, request, stories) {
 }
 
 async function handleNews(request, env, ctx) {
+  const user = await authenticatedUser(request);
+  if (!user) return json({ error: "Registration required" }, 401);
+  try { await loadProfile(env, user); }
+  catch { return json({ error: "Profile storage is unavailable" }, 503); }
   const snapshot = await snapshotForRequest(env, ctx) || demoSnapshot();
-  const stories = await attachCommunityStats(env, request, snapshot.stories || DEMO_STORIES);
+  const stories = await attachCommunityStats(env, user.actorId, snapshot.stories || DEMO_STORIES);
   return json({ ...snapshot, stories });
+}
+
+async function handleSession(request, env) {
+  const user = await authenticatedUser(request);
+  if (!user) return json({ authenticated: false });
+  try { return json({ authenticated: true, profile: await loadProfile(env, user) }); }
+  catch { return json({ error: "Profile storage is unavailable" }, 503); }
+}
+
+async function handleProfile(request, env) {
+  const user = await authenticatedUser(request);
+  if (!user) return json({ error: "Registration required" }, 401);
+  let body;
+  try { body = await parseBody(request); }
+  catch { return json({ error: "Invalid request" }, 400); }
+  const displayName = typeof body.displayName === "string" ? body.displayName.trim().replace(/[\u0000-\u001f\u007f]/g, "") : "";
+  if (displayName.length < 2 || displayName.length > 40) return json({ error: "Display name must be between 2 and 40 characters" }, 400);
+  if (!env?.DB) return json({ error: "Profile storage is unavailable" }, 503);
+  try {
+    await loadProfile(env, user);
+    await env.DB.prepare("UPDATE user_profiles SET display_name = ?, updated_at = ?, last_seen_at = ? WHERE user_id = ?").bind(displayName, Date.now(), Date.now(), user.actorId).run();
+    return json({ profile: await loadProfile(env, user) });
+  } catch { return json({ error: "Profile could not be saved" }, 503); }
 }
 
 async function parseBody(request) {
@@ -450,8 +496,9 @@ async function parseBody(request) {
 }
 
 async function handleVote(request, env) {
-  const actor = env?.DB ? await visitorId(request) : null;
-  if (env?.DB && !actor) return json({ error: "Authentication required" }, 401);
+  const user = await authenticatedUser(request);
+  if (!user) return json({ error: "Registration required" }, 401);
+  const actor = user.actorId;
   let body;
   try { body = await parseBody(request); }
   catch { return json({ error: "Invalid request" }, 400); }
@@ -459,11 +506,13 @@ async function handleVote(request, env) {
   const emotion = typeof body.emotion === "string" ? body.emotion : "";
   if (!/^[a-z0-9_-]{3,100}$/i.test(storyId) || !["happy", "neutral", "sad"].includes(emotion)) return json({ error: "A valid story and emotion are required" }, 400);
   if (!env?.DB) return json({ persisted: false, ratings: null });
+  try { await loadProfile(env, user); }
+  catch { return json({ error: "Profile storage is unavailable" }, 503); }
   if (!await allowMutation(env, actor)) return json({ error: "Too many updates; please wait a moment" }, 429);
   if (!await storyIsKnown(env, storyId)) return json({ error: "Story not found" }, 404);
   try {
     await env.DB.prepare("INSERT INTO votes (story_id, actor_id, emotion, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(story_id, actor_id) DO UPDATE SET emotion = excluded.emotion, updated_at = excluded.updated_at").bind(storyId, actor, emotion, Date.now()).run();
-    const rows = await env.DB.prepare("SELECT emotion, COUNT(*) AS count FROM votes WHERE story_id = ? GROUP BY emotion").bind(storyId).all();
+    const rows = await env.DB.prepare("SELECT v.emotion, COUNT(*) AS count FROM votes v INNER JOIN user_profiles p ON p.user_id = v.actor_id WHERE v.story_id = ? GROUP BY v.emotion").bind(storyId).all();
     const ratings = { happy: 0, neutral: 0, sad: 0 };
     for (const row of rows.results || []) ratings[row.emotion] = Number(row.count || 0);
     return json({ persisted: true, storyId, emotion, ratings });
@@ -471,8 +520,9 @@ async function handleVote(request, env) {
 }
 
 async function handleInteraction(request, env) {
-  const actor = env?.DB ? await visitorId(request) : null;
-  if (env?.DB && !actor) return json({ error: "Authentication required" }, 401);
+  const user = await authenticatedUser(request);
+  if (!user) return json({ error: "Registration required" }, 401);
+  const actor = user.actorId;
   let body;
   try { body = await parseBody(request); }
   catch { return json({ error: "Invalid request" }, 400); }
@@ -480,6 +530,8 @@ async function handleInteraction(request, env) {
   const kind = typeof body.kind === "string" ? body.kind : "";
   if (!/^[a-z0-9_-]{3,100}$/i.test(storyId) || !["flip", "source_open"].includes(kind)) return json({ error: "Invalid interaction" }, 400);
   if (!env?.DB) return json({ persisted: false });
+  try { await loadProfile(env, user); }
+  catch { return json({ error: "Profile storage is unavailable" }, 503); }
   if (!await allowMutation(env, actor)) return json({ error: "Too many updates; please wait a moment" }, 429);
   if (!await storyIsKnown(env, storyId)) return json({ error: "Story not found" }, 404);
   try {
@@ -498,6 +550,8 @@ async function handleRequest(request, env, ctx) {
   if (request.method === "GET" && url.pathname === "/") return new Response(INDEX_HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache", ...securityHeaders() } });
   if (request.method === "GET" && url.pathname === "/styles.css") return new Response(STYLES_CSS, { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=300", ...securityHeaders() } });
   if (request.method === "GET" && url.pathname === "/app.js") return new Response(CLIENT_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=300", ...securityHeaders() } });
+  if (request.method === "GET" && url.pathname === "/api/session") return withCors(await handleSession(request, env), request);
+  if (request.method === "POST" && url.pathname === "/api/profile") return withCors(await handleProfile(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/news") return withCors(await handleNews(request, env, ctx), request);
   if (request.method === "POST" && url.pathname === "/api/vote") return withCors(await handleVote(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/interaction") return withCors(await handleInteraction(request, env), request);
