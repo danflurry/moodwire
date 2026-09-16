@@ -4,7 +4,7 @@ Moodwire is a live emotional map of the news. It clusters related headlines from
 
 ## What is included
 
-- 20 server-fetched feeds, refreshed on a one-minute cache cycle
+- 19 server-fetched event-news feeds, refreshed on a one-minute cache cycle with opinion and editorial filtering
 - Worker-side headline clustering and consensus-title selection
 - dense, animated grid packing with card areas from 4–16 cells
 - Happy, Neutral, and Sad reactions with D1 persistence

@@ -18,7 +18,6 @@ const FEEDS = [
   { name: "Financial Times", url: "https://www.ft.com/rss/home/international", site: "https://www.ft.com/" },
   { name: "RNZ News", url: "https://www.rnz.co.nz/rss/news.xml", site: "https://www.rnz.co.nz/news" },
   { name: "Ars Technica", url: "https://feeds.arstechnica.com/arstechnica/index", site: "https://arstechnica.com/" },
-  { name: "The Conversation", url: "https://theconversation.com/us/articles.atom", site: "https://theconversation.com/us" },
 ];
 
 const STOP_WORDS = new Set("a an and are as at be been being but by for from had has have he her hers him his how i if in into is it its just may more most new no not of on or our out over she so than that the their them there they this to under up was we were what when where which who why will with would you your after before amid across says say said latest live news update updates".split(" "));
@@ -98,6 +97,12 @@ function tagValue(block, tag) {
   return match ? decodeXml(match[1]) : "";
 }
 
+function tagValues(block, tag) {
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matches = block.matchAll(new RegExp(`<${escaped}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${escaped}>`, "gi"));
+  return [...matches].map((match) => decodeXml(match[1])).filter(Boolean);
+}
+
 function canonicalUrl(value) {
   try {
     const url = new URL(decodeXml(value));
@@ -108,16 +113,34 @@ function canonicalUrl(value) {
   } catch { return ""; }
 }
 
+function isEditorialOrNonEvent(title, link, categories = []) {
+  const editorialWords = "opinion|editorials?|commentary|comment|columns?|reviews?|analysis|perspectives?|viewpoints?|letters?";
+  const titleMarker = new RegExp(`^(?:${editorialWords})(?:\\s*[:|—–-]|\\s+)`, "i");
+  const titleSuffix = new RegExp(`(?:[|—–-]\\s*)?(?:${editorialWords})\\s*$`, "i");
+  if (titleMarker.test(title) || titleSuffix.test(title)) return true;
+  if (/\b(?:i think|my view|our view|here['’]?s why)\b/i.test(title)) return true;
+  if (/^(?:podcast|newsletter|quiz|crossword|recipe|shopping|deals?)\s*[:|—–-]/i.test(title)) return true;
+  if (categories.some((category) => new RegExp(`^(?:${editorialWords})$`, "i").test(category.trim()))) return true;
+  try {
+    const path = new URL(link).pathname.toLowerCase();
+    if (new RegExp(`/(?:${editorialWords})(?:/|$)`, "i").test(path)) return true;
+  } catch {}
+  return false;
+}
+
 function parseFeed(xml, feed) {
   const itemBlocks = xml.match(/<item(?:\s[^>]*)?>[\s\S]*?<\/item>/gi);
   const entryBlocks = xml.match(/<entry(?:\s[^>]*)?>[\s\S]*?<\/entry>/gi);
   const blocks = itemBlocks?.length ? itemBlocks : entryBlocks || [];
   const items = [];
   for (const block of blocks.slice(0, 10)) {
-    const title = tagValue(block, "title").replace(/\s[-|]\s[^-|]{2,35}$/u, "").trim();
+    const rawTitle = tagValue(block, "title").trim();
     const rssLink = tagValue(block, "link") || tagValue(block, "guid");
     const atomLink = block.match(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*>/i)?.[1] || "";
     const link = canonicalUrl(rssLink || atomLink);
+    const categories = [...tagValues(block, "category"), ...tagValues(block, "media:category")];
+    if (isEditorialOrNonEvent(rawTitle, link, categories)) continue;
+    const title = rawTitle.replace(/\s[-|]\s[^-|]{2,35}$/u, "").trim();
     const dateText = tagValue(block, "pubDate") || tagValue(block, "dc:date") || tagValue(block, "published") || tagValue(block, "updated");
     const publishedAt = Number.isFinite(Date.parse(dateText)) ? Date.parse(dateText) : Date.now();
     if (title.length < 14 || !link) continue;

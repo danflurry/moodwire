@@ -40,8 +40,11 @@ assert.match(scriptText, /moodMinPosition/);
 assert.match(scriptText, /moodMaxPosition/);
 assert.match(scriptText, /moodHappyFilter\?\.addEventListener\("input", \(\) => applyMoodFilter\("left"\)\)/);
 assert.match(scriptText, /moodSadFilter\?\.addEventListener\("input", \(\) => applyMoodFilter\("right"\)\)/);
-assert.match(scriptText, /moodHappyFilter\.max = String\(right\)/);
-assert.match(scriptText, /moodSadFilter\.min = String\(left\)/);
+assert.match(scriptText, /moodHappyFilter\.max = String\(right - gap\)/);
+assert.match(scriptText, /moodSadFilter\.min = String\(left \+ gap\)/);
+assert.match(scriptText, /function moodFilterGap\(\)/);
+assert.match(scriptText, /draggedMoodBoundary/);
+assert.match(scriptText, /setPointerCapture/);
 assert.match(scriptText, /let low = \.75/);
 assert.match(scriptText, /card\.classList\.add\("headline-tight"\)/);
 assert.match(scriptText, /const moodCenter = widestHalf \+ \(moodPosition\(story\) \/ 100\)/);
@@ -54,6 +57,9 @@ assert.doesNotMatch(scriptText, /class="mood-word"/);
 assert.doesNotMatch(scriptText, /ICONS\.(?:happy|neutral|sad)/);
 assert.doesNotMatch(scriptText, /label: "(?:hopeful|concerned|uplifted|heavy|balanced)"/);
 assert.doesNotMatch(scriptText, /simulationStep|simulatedChoice|agentVotes|simVotes|moodwire-visitor/);
+assert.doesNotMatch(scriptText, /class="source-name"|class="open-glyph"/);
+assert.match(scriptText, /const reactionMarkup/);
+assert.match(scriptText, /touch-rate touch-rate-back/);
 assert.match(scriptText, /\/api\/session/);
 assert.match(scriptText, /\/api\/profile/);
 
@@ -67,16 +73,19 @@ assert.match(stylesheetText, /\.card-back[^\n]*background-color: var\(--mood-dee
 assert.match(stylesheetText, /\.card-front[^\n]*background-image: none/);
 assert.match(stylesheetText, /\.card-back[^\n]*background-image: none/);
 assert.match(stylesheetText, /background-color: #242a32/);
-assert.match(stylesheetText, /\.card-front::after, \.card-back::after/);
+assert.doesNotMatch(stylesheetText, /\.card-front::after, \.card-back::after/);
 assert.match(stylesheetText, /\.vertical-axis/);
 assert.match(stylesheetText, /\.story-card\.is-flipped \.card-back \{ visibility: visible/);
 assert.match(stylesheetText, /\.story-card\.is-flipped \.card-front \{ visibility: hidden/);
 assert.match(stylesheetText, /\.flip-button::before, \.back-button::before/);
-assert.match(stylesheetText, /\.mood-filter-range\.left-boundary::/);
-assert.match(stylesheetText, /\.mood-filter-range\.right-boundary::/);
 assert.match(stylesheetText, /\.story-card\.headline-tight \.card-meta \{ display: none/);
-assert.match(stylesheetText, /clip-path: polygon\(0 0, 100% 50%, 0 100%\)/);
-assert.match(stylesheetText, /clip-path: polygon\(100% 0, 0 50%, 100% 100%\)/);
+assert.match(stylesheetText, /\.mood-filter-range::-webkit-slider-thumb[^\n]*border-radius: 50%/);
+assert.doesNotMatch(stylesheetText, /\.mood-filter-range\.left-boundary::[^\n]*clip-path/);
+assert.doesNotMatch(stylesheetText, /\.mood-filter-range\.right-boundary::[^\n]*clip-path/);
+assert.match(stylesheetText, /data-user-vote="happy"[^\n]*\.flip-button::before/);
+assert.match(stylesheetText, /\.card-face:hover \.reaction-panel/);
+assert.match(stylesheetText, /\.reaction-panel[^\n]*height: 34%/);
+assert.match(stylesheetText, /\.source-icon[^\n]*width: 100%[^\n]*height: 100%/);
 assert.match(stylesheetText, /\.reaction-button\[data-value="happy"\] \{ background:/);
 assert.match(stylesheetText, /\.reaction-button\[data-value="neutral"\] \{ background:/);
 assert.match(stylesheetText, /\.reaction-button\[data-value="sad"\] \{ background:/);
@@ -92,14 +101,15 @@ const payload = await news.json();
 assert.equal(payload.mode, "demo");
 assert.ok(payload.stories.length >= 4);
 
-const sampleFeed = `<?xml version="1.0"?><rss><channel><item><title>Coastal cities prepare as powerful storm changes course</title><link>https://example.com/storm</link><pubDate>${new Date().toUTCString()}</pubDate></item><item><title>Researchers announce promising battery material breakthrough</title><link>https://example.com/battery</link><pubDate>${new Date().toUTCString()}</pubDate></item></channel></rss>`;
+const sampleFeed = `<?xml version="1.0"?><rss><channel><item><title>Coastal cities prepare as powerful storm changes course</title><link>https://example.com/storm</link><pubDate>${new Date().toUTCString()}</pubDate></item><item><title>Researchers announce promising battery material breakthrough</title><link>https://example.com/battery</link><pubDate>${new Date().toUTCString()}</pubDate></item><item><title>Opinion: Why leaders keep getting climate policy wrong</title><link>https://example.com/opinion/climate</link><category>Opinion</category><pubDate>${new Date().toUTCString()}</pubDate></item></channel></rss>`;
 globalThis.fetch = async () => new Response(sampleFeed, { status: 200, headers: { "content-type": "application/rss+xml" } });
 const { default: liveWorker } = await import(`${moduleUrl.href}?smoke-live=${Date.now()}`);
 const liveNews = await liveWorker.fetch(new Request("https://moodwire.test/api/news", { headers: authHeaders }), {}, context);
 const livePayload = await liveNews.json();
 assert.equal(livePayload.mode, "live");
-assert.equal(livePayload.activeSources, 20);
+assert.equal(livePayload.activeSources, 19);
 assert.ok(livePayload.stories.some((story) => story.sources.length === 16));
+assert.ok(livePayload.stories.every((story) => !/opinion|climate policy wrong/i.test(story.headline)));
 
 const clusteringTitles = new Map([
   ["feeds.bbci.co.uk", "Supreme Court rejects Trump's mail-in ballot restrictions for midterms"],
@@ -241,4 +251,4 @@ for (let index = 0; index < 61; index += 1) {
 }
 assert.equal(globalThrottleStatus, 429);
 
-console.log(`Smoke test passed: registration gate, profiles, real-user-only voting, aggregation, CORS, validation, and throttling.`);
+console.log(`Smoke test passed: hard-stop mood range, dual-face reactions, icon sources, editorial filtering, accounts, aggregation, and throttling.`);

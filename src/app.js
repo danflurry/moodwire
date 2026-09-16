@@ -10,6 +10,7 @@
   const toast = document.querySelector("#toast");
   const moodHappyFilter = document.querySelector("#mood-filter-happy");
   const moodSadFilter = document.querySelector("#mood-filter-sad");
+  const moodFilter = document.querySelector(".mood-filter");
   const moodFilterStatus = document.querySelector("#mood-filter-status");
   const filterEmpty = document.querySelector("#filter-empty");
   const accountState = document.querySelector("#account-state");
@@ -179,22 +180,30 @@
     return `${Math.round((value - 50) * 2)}% from Neutral toward Sad`;
   }
 
+  function moodFilterGap() {
+    const width = moodFilter?.getBoundingClientRect().width || 320;
+    return clamp(Math.ceil((16 / width) * 100), 1, 6);
+  }
+
   function applyMoodFilter(changedBoundary = "both") {
     let left = clamp(Number(moodHappyFilter?.value || 0), 0, 100);
     let right = clamp(Number(moodSadFilter?.value || 100), 0, 100);
-    if (left > right && changedBoundary === "left") left = right;
-    if (right < left && changedBoundary === "right") right = left;
-    if (left > right) [left, right] = [right, left];
+    const gap = moodFilterGap();
+    if (changedBoundary === "left") left = Math.min(left, right - gap);
+    else if (changedBoundary === "right") right = Math.max(right, left + gap);
+    else if (right - left < gap) right = Math.min(100, left + gap);
+    left = clamp(left, 0, 100 - gap);
+    right = clamp(right, left + gap, 100);
     state.moodMinPosition = left;
     state.moodMaxPosition = right;
     if (moodHappyFilter) {
       moodHappyFilter.value = String(left);
-      moodHappyFilter.max = String(right);
+      moodHappyFilter.max = String(right - gap);
       moodHappyFilter.setAttribute("aria-valuetext", describeMoodBoundary(left));
     }
     if (moodSadFilter) {
       moodSadFilter.value = String(right);
-      moodSadFilter.min = String(left);
+      moodSadFilter.min = String(left + gap);
       moodSadFilter.setAttribute("aria-valuetext", describeMoodBoundary(right));
     }
     document.documentElement.style.setProperty("--mood-filter-start", `${left}%`);
@@ -220,15 +229,21 @@
     let domain = item.domain || "";
     try { domain = domain || new URL(url).hostname; } catch { domain = ""; }
     const name = String(item.name || domain || "Source");
-    const short = name.split(/\s+/).map((part) => part[0]).join("").slice(0, 3).toUpperCase();
     const favicon = domain ? `https://${domain}/favicon.ico` : "";
-    return `<a class="source-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" data-action="source" title="Open ${escapeHtml(name)} in a new tab"><span class="source-icon"><b>${escapeHtml(short)}</b>${favicon ? `<img class="source-favicon" src="${escapeHtml(favicon)}" alt="">` : ""}</span><span class="source-name">${escapeHtml(name)}</span><span class="open-glyph" aria-hidden="true">↗</span></a>`;
+    const fallback = '<svg class="source-fallback" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 4.5h14v15H5zM8 8h8M8 11.5h8M8 15h5"/></svg>';
+    return `<a class="source-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" data-action="source" title="Open ${escapeHtml(name)} in a new tab" aria-label="Open ${escapeHtml(name)} in a new tab"><span class="source-icon">${fallback}${favicon ? `<img class="source-favicon" src="${escapeHtml(favicon)}" alt="">` : ""}</span></a>`;
   }
 
   function createCard(story) {
     const article = document.createElement("article");
     article.className = "story-card";
     article.dataset.id = story.id;
+    const reactionMarkup = `
+      <div class="reaction-panel" role="group" aria-label="How does this story make you feel?">
+        <button class="reaction-button" type="button" data-action="rate" data-value="happy"><span>Happy</span></button>
+        <button class="reaction-button" type="button" data-action="rate" data-value="neutral"><span>Neutral</span></button>
+        <button class="reaction-button" type="button" data-action="rate" data-value="sad"><span>Sad</span></button>
+      </div>`;
     article.innerHTML = `
       <div class="card-rotator">
         <section class="card-face card-front">
@@ -237,16 +252,14 @@
             <div class="card-meta"><span class="reaction-count"></span><span class="mood-meter" aria-hidden="true"><i class="meter-happy"></i><i class="meter-neutral"></i><i class="meter-sad"></i></span></div>
           </div>
           <button class="touch-rate" type="button" data-action="touch-rate" aria-label="Show reaction choices">React</button>
-          <div class="reaction-panel" role="group" aria-label="How does this story make you feel?">
-            <button class="reaction-button" type="button" data-action="rate" data-value="happy"><span>Happy</span></button>
-            <button class="reaction-button" type="button" data-action="rate" data-value="neutral"><span>Neutral</span></button>
-            <button class="reaction-button" type="button" data-action="rate" data-value="sad"><span>Sad</span></button>
-          </div>
+          ${reactionMarkup}
           <button class="flip-button" type="button" data-action="flip" aria-label="Turn card over to view sources"><span class="flip-count"></span>${ICONS.flip}</button>
         </section>
         <section class="card-face card-back" aria-hidden="true">
           <h3 class="back-headline"></h3>
           <div class="source-grid"></div>
+          <button class="touch-rate touch-rate-back" type="button" data-action="touch-rate" aria-label="Show reaction choices">React</button>
+          ${reactionMarkup}
           <button class="back-button" type="button" data-action="back" aria-label="Turn card back to the headline">${ICONS.back}</button>
         </section>
       </div>`;
@@ -276,7 +289,9 @@
     card.style.setProperty("--neutral-pct", `${(count.neutral / total) * 100}%`);
     card.style.setProperty("--sad-pct", `${(count.sad / total) * 100}%`);
     card.querySelector(".flip-count").textContent = String(sourceCount);
-    card.querySelector(".flip-button").setAttribute("aria-label", `Turn card over to view ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`);
+    const reactionLabel = selected ? `Your reaction is ${selected}` : "No reaction selected";
+    card.querySelector(".flip-button").setAttribute("aria-label", `Turn card over to view ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}. ${reactionLabel}.`);
+    card.querySelector(".back-button").setAttribute("aria-label", `Turn card back to the headline. ${reactionLabel}.`);
     card.querySelector("h2").textContent = story.headline;
     card.querySelector(".back-headline").textContent = story.headline;
     card.querySelector(".reaction-count").textContent = `${total} reactions`;
@@ -635,7 +650,7 @@
       if (!Array.isArray(data.stories) || !data.stories.length) throw new Error("No stories");
       mergeStories(data.stories, data.mode === "live" || data.mode === "cached");
       feedState.textContent = data.mode === "live" || data.mode === "cached" ? "LIVE FEEDS" : "PREVIEW SIGNAL";
-      sourceTotal.textContent = String(data.activeSources || data.totalSources || 20);
+      sourceTotal.textContent = String(data.activeSources || data.totalSources || 19);
       feedNote.textContent = data.mode === "live" || data.mode === "cached" ? "checked every minute" : "preview data; reconnecting automatically";
       const refreshed = Number(data.refreshedAt || Date.now());
       refreshTime.dataset.timestamp = String(refreshed);
@@ -644,7 +659,7 @@
       if (initial || !state.stories.length) {
         mergeStories(SEED_STORIES, false);
         feedState.textContent = "OFFLINE SAMPLE";
-        sourceTotal.textContent = "20";
+        sourceTotal.textContent = "19";
         feedNote.textContent = "sample stories; reconnecting automatically";
         refreshTime.textContent = "Live feeds reconnect automatically";
       }
@@ -768,6 +783,42 @@
       profileStatus.textContent = error instanceof Error ? error.message : "Profile could not be saved";
     }
   });
+  let draggedMoodBoundary = null;
+  function updateMoodBoundaryFromPointer(event) {
+    if (!draggedMoodBoundary || !moodFilter) return;
+    const rect = moodFilter.getBoundingClientRect();
+    const position = Math.round(clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100, 0, 100));
+    const gap = moodFilterGap();
+    if (draggedMoodBoundary === "left") {
+      moodHappyFilter.value = String(Math.min(position, Number(moodSadFilter.value) - gap));
+    } else {
+      moodSadFilter.value = String(Math.max(position, Number(moodHappyFilter.value) + gap));
+    }
+    applyMoodFilter(draggedMoodBoundary);
+  }
+  moodFilter?.addEventListener("pointerdown", (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    const rect = moodFilter.getBoundingClientRect();
+    const position = Math.round(clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100, 0, 100));
+    const left = Number(moodHappyFilter.value);
+    const right = Number(moodSadFilter.value);
+    draggedMoodBoundary = Math.abs(position - left) <= Math.abs(position - right) ? "left" : "right";
+    moodFilter.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+    updateMoodBoundaryFromPointer(event);
+  });
+  moodFilter?.addEventListener("pointermove", (event) => {
+    if (!draggedMoodBoundary) return;
+    event.preventDefault();
+    updateMoodBoundaryFromPointer(event);
+  });
+  const finishMoodDrag = (event) => {
+    if (!draggedMoodBoundary) return;
+    if (moodFilter?.hasPointerCapture?.(event.pointerId)) moodFilter.releasePointerCapture(event.pointerId);
+    draggedMoodBoundary = null;
+  };
+  moodFilter?.addEventListener("pointerup", finishMoodDrag);
+  moodFilter?.addEventListener("pointercancel", finishMoodDrag);
   moodHappyFilter?.addEventListener("input", () => applyMoodFilter("left"));
   moodSadFilter?.addEventListener("input", () => applyMoodFilter("right"));
   applyMoodFilter();
@@ -785,6 +836,6 @@
   }, 10_000);
   new ResizeObserver(() => {
     clearTimeout(state.resizeTimer);
-    state.resizeTimer = setTimeout(layoutCards, 100);
+    state.resizeTimer = setTimeout(() => applyMoodFilter(), 100);
   }).observe(stage);
 })();
